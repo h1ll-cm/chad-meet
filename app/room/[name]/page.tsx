@@ -15,6 +15,7 @@ export default function RoomPage() {
     const connectToRoom = async () => {
       try {
         setIsConnecting(true)
+        console.log('Подключаемся к комнате...', participantName)
         
         // Получаем токен
         const response = await fetch('/api/token', {
@@ -27,18 +28,23 @@ export default function RoomPage() {
         })
 
         const { token } = await response.json()
+        console.log('Получен токен:', token ? 'Есть' : 'Нет')
+
+        const livekitUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL
+        console.log('LiveKit URL:', livekitUrl)
 
         // Подключаемся к комнате
         const room = new Room()
         
-        await room.connect(process.env.NEXT_PUBLIC_LIVEKIT_URL || 'ws://localhost:7880', token)
+        await room.connect(livekitUrl!, token)
+        console.log('Подключились к комнате успешно')
         
         setRoom(room)
         setIsConnecting(false)
         
       } catch (err) {
         console.error('Ошибка подключения:', err)
-        setError('Не удалось подключиться к комнате')
+        setError(`Не удалось подключиться: ${err}`)
         setIsConnecting(false)
       }
     }
@@ -46,7 +52,9 @@ export default function RoomPage() {
     connectToRoom()
 
     return () => {
-      room?.disconnect()
+      if (room) {
+        room.disconnect()
+      }
     }
   }, [participantName])
 
@@ -62,6 +70,7 @@ export default function RoomPage() {
     return (
       <div className="container">
         <p>Ошибка: {error}</p>
+        <p>Проверьте консоль браузера для подробностей</p>
       </div>
     )
   }

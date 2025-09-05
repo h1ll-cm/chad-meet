@@ -35,21 +35,30 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
       const videoPublication = participant.getTrackPublication(Track.Source.Camera)
       const videoTrack = videoPublication?.track
       
-      if (videoTrack && videoRef.current) {
+      if (videoTrack && videoRef.current && !videoRef.current.srcObject) {
         videoTrack.attach(videoRef.current)
         setHasVideo(true)
-      } else {
+      } else if (!videoTrack) {
         setHasVideo(false)
+      } else if (videoTrack) {
+        setHasVideo(true)
       }
 
-      // Проверяем экраншаринг
+      // Проверяем экраншаринг (более агрессивно)
       const screenPublication = participant.getTrackPublication(Track.Source.ScreenShare)
       const screenTrack = screenPublication?.track
       
       if (screenTrack && screenRef.current) {
-        screenTrack.attach(screenRef.current)
+        // Принудительно переподключаем экран каждый раз
+        if (screenRef.current.srcObject !== screenTrack.mediaStream) {
+          screenTrack.attach(screenRef.current)
+        }
         setHasScreen(true)
+        console.log('Экраншаринг обнаружен для', participant.name || participant.identity)
       } else {
+        if (hasScreen) {
+          console.log('Экраншаринг остановлен для', participant.name || participant.identity)
+        }
         setHasScreen(false)
       }
     }
@@ -65,8 +74,8 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
     participant.on('trackMuted', updateTracks)
     participant.on('trackUnmuted', updateTracks)
 
-    // Проверяем каждые 2 секунды (для надёжности)
-    const interval = setInterval(updateTracks, 2000)
+    // Проверяем каждую секунду для быстрого обновления экрана
+    const interval = setInterval(updateTracks, 1000)
 
     return () => {
       participant.off('trackPublished', updateTracks)
@@ -77,7 +86,7 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
       participant.off('trackUnmuted', updateTracks)
       clearInterval(interval)
     }
-  }, [participant])
+  }, [participant, hasScreen])
 
   // Приоритет экраншарингу
   if (hasScreen) {

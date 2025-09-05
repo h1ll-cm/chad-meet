@@ -28,6 +28,8 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
   const screenRef = useRef<HTMLVideoElement>(null)
   const [hasVideo, setHasVideo] = useState(false)
   const [hasScreen, setHasScreen] = useState(false)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [audioLevel, setAudioLevel] = useState(0)
 
   useEffect(() => {
     const updateTracks = () => {
@@ -44,29 +46,70 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
         setHasVideo(true)
       }
 
-      // Проверяем экраншаринг (более агрессивно)
+      // Проверяем экраншаринг
       const screenPublication = participant.getTrackPublication(Track.Source.ScreenShare)
       const screenTrack = screenPublication?.track
       
       if (screenTrack && screenRef.current) {
-        // Принудительно переподключаем экран каждый раз
         if (screenRef.current.srcObject !== screenTrack.mediaStream) {
           screenTrack.attach(screenRef.current)
         }
         setHasScreen(true)
-        console.log('Экраншаринг обнаружен для', participant.name || participant.identity)
       } else {
-        if (hasScreen) {
-          console.log('Экраншаринг остановлен для', participant.name || participant.identity)
-        }
         setHasScreen(false)
+      }
+
+      // Проверяем микрофон для индикации
+      const audioPublication = participant.getTrackPublication(Track.Source.Microphone)
+      if (audioPublication?.track) {
+        setupAudioLevelDetection(audioPublication.track as any)
+      }
+    }
+
+    const setupAudioLevelDetection = (audioTrack: any) => {
+      if (!audioTrack.mediaStream) return
+
+      try {
+        const audioContext = new AudioContext()
+        const source = audioContext.createMediaStreamSource(audioTrack.mediaStream)
+        const analyser = audioContext.createAnalyser()
+        
+        analyser.fftSize = 256
+        source.connect(analyser)
+        
+        const dataArray = new Uint8Array(analyser.frequencyBinCount)
+        
+        const checkAudioLevel = () => {
+          analyser.getByteFrequencyData(dataArray)
+          
+          // Вычисляем средний уровень звука
+          const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length
+          setAudioLevel(average)
+          
+          // Считаем что человек говорит, если уровень выше 30
+          const speaking = average > 30
+          setIsSpeaking(speaking)
+          
+          if (speaking) {
+            console.log(`${participant.name || participant.identity} говорит (уровень: ${Math.round(average)})`)
+          }
+        }
+        
+        const interval = setInterval(checkAudioLevel, 100) // Проверяем каждые 100мс
+        
+        return () => {
+          clearInterval(interval)
+          audioContext.close()
+        }
+      } catch (error) {
+        console.log('Не удалось настроить детекцию звука:', error)
       }
     }
 
     // Запускаем сразу
     updateTracks()
 
-    // Слушаем все события изменения треков
+    // Слушаем события
     participant.on('trackPublished', updateTracks)
     participant.on('trackUnpublished', updateTracks)
     participant.on('trackSubscribed', updateTracks)
@@ -74,7 +117,7 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
     participant.on('trackMuted', updateTracks)
     participant.on('trackUnmuted', updateTracks)
 
-    // Проверяем каждую секунду для быстрого обновления экрана
+    // Обновляем каждую секунду
     const interval = setInterval(updateTracks, 1000)
 
     return () => {
@@ -88,6 +131,10 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
     }
   }, [participant, hasScreen])
 
+  // Определяем цвет рамки
+  const borderColor = isSpeaking ? '#00ff00' : 'transparent'
+  const borderWidth = isSpeaking ? '3px' : '1px'
+
   // Приоритет экраншарингу
   if (hasScreen) {
     return (
@@ -96,7 +143,9 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
         borderRadius: '8px',
         overflow: 'hidden',
         position: 'relative',
-        minHeight: '300px'
+        minHeight: '300px',
+        border: `${borderWidth} solid ${borderColor}`,
+        transition: 'border 0.2s ease'
       }}>
         <video
           ref={screenRef}
@@ -116,6 +165,7 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
           fontSize: '0.8rem'
         }}>
           {participant.name || participant.identity} (демонстрация экрана)
+          {isSpeaking && ' 🗣️'}
         </div>
       </div>
     )
@@ -130,7 +180,9 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
       minHeight: '200px',
       display: 'flex',
       alignItems: 'center',
-      justifyContent: 'center'
+      justifyContent: 'center',
+      border: `${borderWidth} solid ${borderColor}`,
+      transition: 'border 0.2s ease'
     }}>
       {hasVideo ? (
         <video
@@ -145,12 +197,13 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
           width: '80px',
           height: '80px',
           borderRadius: '50%',
-          background: '#007acc',
+          background: isSpeaking ? '#00aa00' : '#007acc',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           fontSize: '2rem',
-          color: 'white'
+          color: 'white',
+          transition: 'background 0.2s ease'
         }}>
           {participant.name?.charAt(0).toUpperCase() || 'U'}
         </div>
@@ -168,7 +221,22 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
       }}>
         {participant.name || participant.identity}
         {participant instanceof LocalParticipant ? ' (вы)' : ''}
+        {isSpeaking && ' 🗣️'}
       </div>
+      
+      {/* Индикатор уровня звука */}
+      {audioLevel > 0 && (
+        <div style={{
+          position: 'absolute',
+          top: '8px',
+          right: '8px',
+          background: 'rgba(0,255,0,0.7)',
+          width: `${Math.min(audioLevel * 2, 100)}px`,
+          height: '4px',
+          borderRadius: '2px',
+          transition: 'width 0.1s ease'
+        }} />
+      )}
     </div>
   )
 }

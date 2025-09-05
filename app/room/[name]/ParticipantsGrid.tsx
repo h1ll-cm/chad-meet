@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef } from 'react'
-import { LocalParticipant, RemoteParticipant, Track } from 'livekit-client'
+import { LocalParticipant, RemoteParticipant, Track, TrackPublication } from 'livekit-client'
 
 interface ParticipantsGridProps {
   participants: (LocalParticipant | RemoteParticipant)[]
@@ -41,7 +41,7 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
     }
 
     // Подписываемся на существующие треки
-    participant.tracks.forEach((trackPub) => {
+    participant.trackPublications.forEach((trackPub: TrackPublication) => {
       if (trackPub.track) {
         handleTrackSubscribed(trackPub.track)
       }
@@ -57,8 +57,8 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
     }
   }, [participant])
 
-  const hasVideo = Array.from(participant.tracks.values()).some(
-    track => track.kind === Track.Kind.Video && track.track
+  const hasVideo = Array.from(participant.trackPublications.values()).some(
+    (track: TrackPublication) => track.kind === Track.Kind.Video && track.track
   )
 
   return (

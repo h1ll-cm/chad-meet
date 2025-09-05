@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useRef } from 'react'
 import { LocalParticipant, RemoteParticipant, Track } from 'livekit-client'
-import { useTrack } from '@livekit/components-react'
 
 interface ParticipantsGridProps {
   participants: (LocalParticipant | RemoteParticipant)[]
@@ -29,26 +28,41 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
   const screenRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
-    // Подключение камеры
-    const videoTrack = participant.getTrack(Track.Source.Camera)?.track
-    if (videoTrack && videoRef.current) {
-      videoTrack.attach(videoRef.current)
+    const updateTracks = () => {
+      // Получаем видео с камеры
+      const videoPublication = participant.getTrackPublication(Track.Source.Camera)
+      if (videoPublication?.track && videoRef.current) {
+        videoPublication.track.attach(videoRef.current)
+      }
+
+      // Получаем экран
+      const screenPublication = participant.getTrackPublication(Track.Source.ScreenShare)
+      if (screenPublication?.track && screenRef.current) {
+        screenPublication.track.attach(screenRef.current)
+      }
     }
 
-    // Подключение экрана
-    const screenTrack = participant.getTrack(Track.Source.ScreenShare)?.track
-    if (screenTrack && screenRef.current) {
-      screenTrack.attach(screenRef.current)
-    }
+    updateTracks()
+
+    // Слушаем изменения треков
+    participant.on('trackPublished', updateTracks)
+    participant.on('trackUnpublished', updateTracks)
+    participant.on('trackSubscribed', updateTracks)
+    participant.on('trackUnsubscribed', updateTracks)
 
     return () => {
-      videoTrack?.detach()
-      screenTrack?.detach()
+      participant.off('trackPublished', updateTracks)
+      participant.off('trackUnpublished', updateTracks)
+      participant.off('trackSubscribed', updateTracks)
+      participant.off('trackUnsubscribed', updateTracks)
     }
   }, [participant])
 
-  const hasVideo = participant.getTrack(Track.Source.Camera)?.track
-  const hasScreen = participant.getTrack(Track.Source.ScreenShare)?.track
+  const videoPublication = participant.getTrackPublication(Track.Source.Camera)
+  const screenPublication = participant.getTrackPublication(Track.Source.ScreenShare)
+  
+  const hasVideo = videoPublication?.track && videoPublication?.isSubscribed
+  const hasScreen = screenPublication?.track && screenPublication?.isSubscribed
 
   if (hasScreen) {
     return (

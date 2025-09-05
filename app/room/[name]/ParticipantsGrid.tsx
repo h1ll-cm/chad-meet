@@ -29,7 +29,6 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
   const [hasVideo, setHasVideo] = useState(false)
   const [hasScreen, setHasScreen] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
-  const [audioLevel, setAudioLevel] = useState(0)
 
   useEffect(() => {
     const updateTracks = () => {
@@ -37,13 +36,11 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
       const videoPublication = participant.getTrackPublication(Track.Source.Camera)
       const videoTrack = videoPublication?.track
       
-      if (videoTrack && videoRef.current && !videoRef.current.srcObject) {
+      if (videoTrack && videoRef.current) {
         videoTrack.attach(videoRef.current)
         setHasVideo(true)
-      } else if (!videoTrack) {
+      } else {
         setHasVideo(false)
-      } else if (videoTrack) {
-        setHasVideo(true)
       }
 
       // Проверяем экраншаринг
@@ -51,65 +48,22 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
       const screenTrack = screenPublication?.track
       
       if (screenTrack && screenRef.current) {
-        if (screenRef.current.srcObject !== screenTrack.mediaStream) {
-          screenTrack.attach(screenRef.current)
-        }
+        screenTrack.attach(screenRef.current)
         setHasScreen(true)
       } else {
         setHasScreen(false)
       }
 
-      // Проверяем микрофон для индикации
+      // Простая проверка микрофона - есть ли включённый трек
       const audioPublication = participant.getTrackPublication(Track.Source.Microphone)
-      if (audioPublication?.track) {
-        setupAudioLevelDetection(audioPublication.track as any)
-      }
-    }
-
-    const setupAudioLevelDetection = (audioTrack: any) => {
-      if (!audioTrack.mediaStream) return
-
-      try {
-        const audioContext = new AudioContext()
-        const source = audioContext.createMediaStreamSource(audioTrack.mediaStream)
-        const analyser = audioContext.createAnalyser()
-        
-        analyser.fftSize = 256
-        source.connect(analyser)
-        
-        const dataArray = new Uint8Array(analyser.frequencyBinCount)
-        
-        const checkAudioLevel = () => {
-          analyser.getByteFrequencyData(dataArray)
-          
-          // Вычисляем средний уровень звука
-          const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length
-          setAudioLevel(average)
-          
-          // Считаем что человек говорит, если уровень выше 30
-          const speaking = average > 30
-          setIsSpeaking(speaking)
-          
-          if (speaking) {
-            console.log(`${participant.name || participant.identity} говорит (уровень: ${Math.round(average)})`)
-          }
-        }
-        
-        const interval = setInterval(checkAudioLevel, 100) // Проверяем каждые 100мс
-        
-        return () => {
-          clearInterval(interval)
-          audioContext.close()
-        }
-      } catch (error) {
-        console.log('Не удалось настроить детекцию звука:', error)
-      }
+      const hasAudio = audioPublication?.track && !audioPublication.isMuted
+      setIsSpeaking(hasAudio || false)
     }
 
     // Запускаем сразу
     updateTracks()
 
-    // Слушаем события
+    // Слушаем все события изменения треков
     participant.on('trackPublished', updateTracks)
     participant.on('trackUnpublished', updateTracks)
     participant.on('trackSubscribed', updateTracks)
@@ -117,7 +71,7 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
     participant.on('trackMuted', updateTracks)
     participant.on('trackUnmuted', updateTracks)
 
-    // Обновляем каждую секунду
+    // Проверяем каждую секунду
     const interval = setInterval(updateTracks, 1000)
 
     return () => {
@@ -129,11 +83,11 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
       participant.off('trackUnmuted', updateTracks)
       clearInterval(interval)
     }
-  }, [participant, hasScreen])
+  }, [participant])
 
-  // Определяем цвет рамки
+  // Цвет рамки: зелёный если микрофон включён
   const borderColor = isSpeaking ? '#00ff00' : 'transparent'
-  const borderWidth = isSpeaking ? '3px' : '1px'
+  const borderWidth = '2px'
 
   // Приоритет экраншарингу
   if (hasScreen) {
@@ -145,7 +99,7 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
         position: 'relative',
         minHeight: '300px',
         border: `${borderWidth} solid ${borderColor}`,
-        transition: 'border 0.2s ease'
+        transition: 'border 0.3s ease'
       }}>
         <video
           ref={screenRef}
@@ -165,7 +119,7 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
           fontSize: '0.8rem'
         }}>
           {participant.name || participant.identity} (демонстрация экрана)
-          {isSpeaking && ' 🗣️'}
+          {isSpeaking && ' 🎤'}
         </div>
       </div>
     )
@@ -182,7 +136,7 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
       alignItems: 'center',
       justifyContent: 'center',
       border: `${borderWidth} solid ${borderColor}`,
-      transition: 'border 0.2s ease'
+      transition: 'border 0.3s ease'
     }}>
       {hasVideo ? (
         <video
@@ -203,7 +157,7 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
           justifyContent: 'center',
           fontSize: '2rem',
           color: 'white',
-          transition: 'background 0.2s ease'
+          transition: 'background 0.3s ease'
         }}>
           {participant.name?.charAt(0).toUpperCase() || 'U'}
         </div>
@@ -221,22 +175,8 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
       }}>
         {participant.name || participant.identity}
         {participant instanceof LocalParticipant ? ' (вы)' : ''}
-        {isSpeaking && ' 🗣️'}
+        {isSpeaking && ' 🎤'}
       </div>
-      
-      {/* Индикатор уровня звука */}
-      {audioLevel > 0 && (
-        <div style={{
-          position: 'absolute',
-          top: '8px',
-          right: '8px',
-          background: 'rgba(0,255,0,0.7)',
-          width: `${Math.min(audioLevel * 2, 100)}px`,
-          height: '4px',
-          borderRadius: '2px',
-          transition: 'width 0.1s ease'
-        }} />
-      )}
     </div>
   )
 }

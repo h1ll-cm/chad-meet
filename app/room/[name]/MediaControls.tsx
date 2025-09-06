@@ -1,5 +1,5 @@
 'use client'
-import { Room, Track } from 'livekit-client'
+import { Room, TrackSource } from 'livekit-client'
 
 interface MediaControlsProps {
   room: Room

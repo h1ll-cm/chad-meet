@@ -15,6 +15,7 @@
   "livekit-client": "^2.0.3",
   "livekit-server-sdk": "^1.2.0",
   "@livekit/components-react": "^2.0.3",
+  "next-transpile-modules": "^10.0.1",
 },
   "devDependencies": {
     "@types/node": "^20.0.0",

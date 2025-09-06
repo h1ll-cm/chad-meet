@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Room, Track, LocalTrackPublication } from 'livekit-client'
+import { Room, TrackSource, LocalTrackPublication } from 'livekit-client'
 
 interface ControlsComponentProps {
   room: Room

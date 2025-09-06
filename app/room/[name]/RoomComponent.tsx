@@ -1,6 +1,6 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { Room, RoomEvent, LocalParticipant, RemoteParticipant } from 'livekit-client'
+import { Room } from 'livekit-client'
+import { useParticipants } from '@livekit/components-react'
 import ParticipantsGrid from './ParticipantsGrid'
 import ControlsComponent from './ControlsComponent'
 import ChatComponent from './ChatComponent'
@@ -10,46 +10,9 @@ interface RoomComponentProps {
 }
 
 export default function RoomComponent({ room }: RoomComponentProps) {
-  const [participants, setParticipants] = useState<(LocalParticipant | RemoteParticipant)[]>(room.participants.values() as any)
-  const localParticipant = room.localParticipant
+  const participants = useParticipants({ room })
 
-  useEffect(() => {
-    console.log('🛠️ Комната инициализирована с', participants.length, 'участниками')
-
-    const updateParticipants = () => {
-      setParticipants(Array.from(room.participants.values()).concat(localParticipant))
-      console.log('🔄 Участники обновлены:', room.participants.size + 1)
-    }
-
-    updateParticipants()
-
-    // Слушатели на уровне комнаты для автообновления
-    const roomEvents = [
-      RoomEvent.ParticipantConnected,
-      RoomEvent.ParticipantDisconnected,
-      RoomEvent.TrackPublished,
-      RoomEvent.TrackUnpublished,
-      RoomEvent.TrackSubscribed,
-      RoomEvent.TrackUnsubscribed,
-      RoomEvent.LocalTrackPublished,
-      RoomEvent.LocalTrackUnpublished,
-      RoomEvent.AudioPlaybackStatusChanged
-    ]
-
-    roomEvents.forEach(event => {
-      room.on(event, updateParticipants)
-    })
-
-    // Периодическая проверка
-    const interval = setInterval(updateParticipants, 2000)
-
-    return () => {
-      roomEvents.forEach(event => {
-        room.off(event, updateParticipants)
-      })
-      clearInterval(interval)
-    }
-  }, [room, localParticipant])
+  console.log(`🏠 Участники в комнате: ${participants.length}`)
 
   return (
     <div className="room-container" style={{

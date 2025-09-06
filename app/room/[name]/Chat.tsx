@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { Room, RoomEvent, DataPublishOptions } from 'livekit-client'
+import { Room, RoomEvent, DataPublishOptions, RemoteParticipant } from 'livekit-client'
 
 interface ChatProps {
   room: Room
@@ -18,7 +18,7 @@ export default function Chat({ room }: ChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const handleDataReceived = (payload: Uint8Array, participant?: any) => {
+    const handleDataReceived = (payload: Uint8Array, participant?: RemoteParticipant) => {
       try {
         const decoder = new TextDecoder()
         const data = JSON.parse(decoder.decode(payload))

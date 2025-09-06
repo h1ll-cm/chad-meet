@@ -1,9 +1,7 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  transpilePackages: ['livekit-client', '@livekit/components-react'],
+const withTM = require('next-transpile-modules')(['livekit-client', '@livekit/components-react']);
+
+module.exports = withTM({
   experimental: {
     esmExternals: 'loose',
   },
-}
-
-module.exports = nextConfig
+});

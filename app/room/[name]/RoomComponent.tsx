@@ -1,48 +1,74 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { Room, RoomEvent, RemoteParticipant, LocalParticipant } from 'livekit-client'
+import { useEffect, useState } from 'react'
+import { Room, RoomEvent, LocalParticipant, RemoteParticipant } from 'livekit-client'
 import ParticipantsGrid from './ParticipantsGrid'
-import ChatComponent from './ChatComponent'
 import ControlsComponent from './ControlsComponent'
+import ChatComponent from './ChatComponent'
 
 interface RoomComponentProps {
   room: Room
 }
 
 export default function RoomComponent({ room }: RoomComponentProps) {
-  const [participants, setParticipants] = useState<(LocalParticipant | RemoteParticipant)[]>([])
+  const [participants, setParticipants] = useState<(LocalParticipant | RemoteParticipant)[]>(room.participants.values() as any)
+  const localParticipant = room.localParticipant
 
   useEffect(() => {
+    console.log('🛠️ Комната инициализирована с', participants.length, 'участниками')
+
     const updateParticipants = () => {
-      const allParticipants = [
-        room.localParticipant,
-        ...Array.from(room.remoteParticipants.values())
-      ]
-      setParticipants(allParticipants)
+      setParticipants(Array.from(room.participants.values()).concat(localParticipant))
+      console.log('🔄 Участники обновлены:', room.participants.size + 1)
     }
 
     updateParticipants()
 
-    room.on(RoomEvent.ParticipantConnected, updateParticipants)
-    room.on(RoomEvent.ParticipantDisconnected, updateParticipants)
+    // Слушатели на уровне комнаты для автообновления
+    const roomEvents = [
+      RoomEvent.ParticipantConnected,
+      RoomEvent.ParticipantDisconnected,
+      RoomEvent.TrackPublished,
+      RoomEvent.TrackUnpublished,
+      RoomEvent.TrackSubscribed,
+      RoomEvent.TrackUnsubscribed,
+      RoomEvent.LocalTrackPublished,
+      RoomEvent.LocalTrackUnpublished,
+      RoomEvent.AudioPlaybackStatusChanged
+    ]
+
+    roomEvents.forEach(event => {
+      room.on(event, updateParticipants)
+    })
+
+    // Периодическая проверка
+    const interval = setInterval(updateParticipants, 2000)
 
     return () => {
-      room.off(RoomEvent.ParticipantConnected, updateParticipants)
-      room.off(RoomEvent.ParticipantDisconnected, updateParticipants)
+      roomEvents.forEach(event => {
+        room.off(event, updateParticipants)
+      })
+      clearInterval(interval)
     }
-  }, [room])
+  }, [room, localParticipant])
 
   return (
-    <div className="room-container">
+    <div className="room-container" style={{
+      display: 'grid',
+      gridTemplateColumns: '3fr 1fr',
+      height: '100vh',
+      background: '#111'
+    }}>
       <div className="participants-section">
         <ParticipantsGrid participants={participants} />
       </div>
       
-      <div className="controls-section">
+      <div className="sidebar-section" style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+        padding: '1rem'
+      }}>
         <ControlsComponent room={room} />
-      </div>
-      
-      <div className="chat-section">
         <ChatComponent room={room} />
       </div>
     </div>

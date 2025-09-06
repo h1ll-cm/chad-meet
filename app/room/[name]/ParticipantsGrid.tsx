@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { 
   Room, 
-  Track, 
+  TrackSource, 
   RemoteTrack, 
   RemoteParticipant, 
   LocalParticipant,
@@ -69,8 +69,8 @@ function ParticipantTile({ participant }: { participant: Participant }) {
   const isLocal = participant === participant.room?.localParticipant
 
   useEffect(() => {
-    const cameraTrack = participant.getTrackPublication(Track.Source.Camera)?.track
-    const screenTrack = participant.getTrackPublication(Track.Source.ScreenShare)?.track
+    const cameraTrack = participant.getTrackPublication(TrackSource.Camera)?.track
+    const screenTrack = participant.getTrackPublication(TrackSource.ScreenShare)?.track
 
     if (cameraTrack && videoRef.current) {
       cameraTrack.attach(videoRef.current)
@@ -92,8 +92,8 @@ function ParticipantTile({ participant }: { participant: Participant }) {
     }
   }, [participant])
 
-  const cameraTrack = participant.getTrackPublication(Track.Source.Camera)
-  const screenTrack = participant.getTrackPublication(Track.Source.ScreenShare)
+  const cameraTrack = participant.getTrackPublication(TrackSource.Camera)
+  const screenTrack = participant.getTrackPublication(TrackSource.ScreenShare)
   const hasBoth = cameraTrack && screenTrack
 
   return (

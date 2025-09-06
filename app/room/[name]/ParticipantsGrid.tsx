@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { LocalParticipant, RemoteParticipant, Track } from 'livekit-client'
 
 interface ParticipantsGridProps {
@@ -24,215 +24,151 @@ export default function ParticipantsGrid({ participants }: ParticipantsGridProps
 }
 
 function ParticipantVideo({ participant }: { participant: LocalParticipant | RemoteParticipant }) {
-  const [remoteVideoElement, setRemoteVideoElement] = useState<HTMLVideoElement | null>(null)
-  const [remoteScreenElement, setRemoteScreenElement] = useState<HTMLVideoElement | null>(null)
-  const [localCameraStream, setLocalCameraStream] = useState<MediaStream | null>(null)
-  const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null)
-  const [hasRemoteCamera, setHasRemoteCamera] = useState(false)
-  const [hasRemoteScreen, setHasRemoteScreen] = useState(false)
+  const [tiles, setTiles] = useState<JSX.Element[]>([])
   const [isSpeaking, setIsSpeaking] = useState(false)
   
   const isLocal = participant instanceof LocalParticipant
 
-  // Получаем локальные стримы прямо из браузера
   useEffect(() => {
-    if (!isLocal) return
+    console.log(`🔄 Обновление участника ${participant.name} (${isLocal ? 'локальный' : 'удалённый'})`)
 
-    let cameraStream: MediaStream | null = null
-    let screenStream: MediaStream | null = null
+    const updateParticipant = async () => {
+      const newTiles: JSX.Element[] = []
 
-    const getLocalStreams = async () => {
-      // Проверяем какие треки опубликованы в LiveKit
-      const cameraTrack = participant.getTrackPublication(Track.Source.Camera)?.track
-      const screenTrack = participant.getTrackPublication(Track.Source.ScreenShare)?.track
-
-      console.log(`🏠 Локальные треки: камера=${!!cameraTrack}, экран=${!!screenTrack}`)
-
-      // Если есть трек камеры в LiveKit, получаем камеру из браузера
-      if (cameraTrack && !localCameraStream) {
-        try {
-          cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-          setLocalCameraStream(cameraStream)
-          console.log(`✅ Получен локальный поток камеры`)
-        } catch (error) {
-          console.error(`❌ Ошибка получения камеры:`, error)
-        }
-      } else if (!cameraTrack && localCameraStream) {
-        localCameraStream.getTracks().forEach(track => track.stop())
-        setLocalCameraStream(null)
-      }
-
-      // Если есть трек экрана в LiveKit, получаем экран из браузера
-      if (screenTrack && !localScreenStream) {
-        try {
-          screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
-          setLocalScreenStream(screenStream)
-          console.log(`✅ Получен локальный поток экрана`)
-        } catch (error) {
-          console.error(`❌ Ошибка получения экрана:`, error)
-        }
-      } else if (!screenTrack && localScreenStream) {
-        localScreenStream.getTracks().forEach(track => track.stop())
-        setLocalScreenStream(null)
-      }
-    }
-
-    getLocalStreams()
-
-    // Слушаем изменения треков
-    const events = ['localTrackPublished', 'localTrackUnpublished']
-    events.forEach(event => {
-      participant.on(event as any, getLocalStreams)
-    })
-
-    const interval = setInterval(getLocalStreams, 3000)
-
-    return () => {
-      events.forEach(event => {
-        participant.off(event as any, getLocalStreams)
-      })
-      clearInterval(interval)
-      
-      if (cameraStream) {
-        cameraStream.getTracks().forEach(track => track.stop())
-      }
-      if (screenStream) {
-        screenStream.getTracks().forEach(track => track.stop())
-      }
-    }
-  }, [participant, isLocal, localCameraStream, localScreenStream])
-
-  // Обрабатываем удалённые треки
-  useEffect(() => {
-    if (isLocal) return
-
-    const updateRemoteTracks = () => {
-      // Камера
-      const cameraPublication = participant.getTrackPublication(Track.Source.Camera)
-      const cameraTrack = cameraPublication?.track
-      
-      if (cameraTrack && !remoteVideoElement) {
-        const video = document.createElement('video')
-        video.autoplay = true
-        video.playsInline = true
-        video.muted = false
-        video.style.width = '100%'
-        video.style.height = '100%'
-        video.style.objectFit = 'cover'
-
-        try {
-          cameraTrack.attach(video)
-          setRemoteVideoElement(video)
-          setHasRemoteCamera(true)
-          console.log(`✅ Удалённая камера подключена для ${participant.name}`)
-        } catch (error) {
-          console.error(`❌ Ошибка подключения удалённой камеры:`, error)
-        }
-      } else if (!cameraTrack) {
-        setHasRemoteCamera(false)
-        setRemoteVideoElement(null)
-      }
-
-      // Экран
-      const screenPublication = participant.getTrackPublication(Track.Source.ScreenShare)
-      const screenTrack = screenPublication?.track
-      
-      if (screenTrack && !remoteScreenElement) {
-        const video = document.createElement('video')
-        video.autoplay = true
-        video.playsInline = true
-        video.muted = false
-        video.style.width = '100%'
-        video.style.height = '100%'
-        video.style.objectFit = 'contain'
-
-        try {
-          screenTrack.attach(video)
-          setRemoteScreenElement(video)
-          setHasRemoteScreen(true)
-          console.log(`✅ Удалённый экран подключен для ${participant.name}`)
-        } catch (error) {
-          console.error(`❌ Ошибка подключения удалённого экрана:`, error)
-        }
-      } else if (!screenTrack) {
-        setHasRemoteScreen(false)
-        setRemoteScreenElement(null)
-      }
-
-      // Аудио
+      // Проверяем аудио
       const audioPublication = participant.getTrackPublication(Track.Source.Microphone)
-      setIsSpeaking(!!audioPublication?.track && !audioPublication.isMuted)
+      const speaking = !!audioPublication?.track && !audioPublication.isMuted
+      setIsSpeaking(speaking)
+
+      if (isLocal) {
+        // Локальный участник
+        const cameraTrack = participant.getTrackPublication(Track.Source.Camera)?.track
+        const screenTrack = participant.getTrackPublication(Track.Source.ScreenShare)?.track
+
+        console.log(`🏠 Локальные треки: камера=${!!cameraTrack}, экран=${!!screenTrack}`)
+
+        // Камера
+        if (cameraTrack) {
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+            newTiles.push(
+              <LocalVideoTile 
+                key="local-camera"
+                stream={stream}
+                participant={participant}
+                type="camera"
+                isSpeaking={speaking}
+              />
+            )
+            console.log(`✅ Локальная камера добавлена`)
+          } catch (error) {
+            console.error(`❌ Ошибка получения камеры:`, error)
+            // Показываем аватар
+            newTiles.push(
+              <AvatarTile 
+                key="local-camera-avatar"
+                participant={participant}
+                isSpeaking={speaking}
+              />
+            )
+          }
+        } else {
+          // Аватар если нет камеры
+          newTiles.push(
+            <AvatarTile 
+              key="local-avatar"
+              participant={participant}
+              isSpeaking={speaking}
+            />
+          )
+        }
+
+        // Экран
+        if (screenTrack) {
+          try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
+            newTiles.push(
+              <LocalVideoTile 
+                key="local-screen"
+                stream={stream}
+                participant={participant}
+                type="screen"
+                isSpeaking={false}
+              />
+            )
+            console.log(`✅ Локальный экран добавлен`)
+          } catch (error) {
+            console.error(`❌ Ошибка получения экрана:`, error)
+          }
+        }
+
+      } else {
+        // Удалённый участник
+        const cameraTrack = participant.getTrackPublication(Track.Source.Camera)?.track
+        const screenTrack = participant.getTrackPublication(Track.Source.ScreenShare)?.track
+
+        console.log(`👥 Удалённые треки: камера=${!!cameraTrack}, экран=${!!screenTrack}`)
+
+        // Камера
+        if (cameraTrack) {
+          newTiles.push(
+            <RemoteVideoTile 
+              key="remote-camera"
+              track={cameraTrack}
+              participant={participant}
+              type="camera"
+              isSpeaking={speaking}
+            />
+          )
+        } else {
+          // Аватар если нет камеры
+          newTiles.push(
+            <AvatarTile 
+              key="remote-avatar"
+              participant={participant}
+              isSpeaking={speaking}
+            />
+          )
+        }
+
+        // Экран
+        if (screenTrack) {
+          newTiles.push(
+            <RemoteVideoTile 
+              key="remote-screen"
+              track={screenTrack}
+              participant={participant}
+              type="screen"
+              isSpeaking={false}
+            />
+          )
+        }
+      }
+
+      setTiles(newTiles)
     }
 
-    updateRemoteTracks()
+    updateParticipant()
 
-    const events = ['trackPublished', 'trackUnpublished', 'trackSubscribed', 'trackUnsubscribed']
+    // Слушаем изменения
+    const events = [
+      'trackPublished', 'trackUnpublished',
+      'trackSubscribed', 'trackUnsubscribed',
+      'localTrackPublished', 'localTrackUnpublished'
+    ]
     events.forEach(event => {
-      participant.on(event as any, updateRemoteTracks)
+      participant.on(event as any, updateParticipant)
     })
 
-    const interval = setInterval(updateRemoteTracks, 2000)
+    const interval = setInterval(updateParticipant, 3000)
 
     return () => {
       events.forEach(event => {
-        participant.off(event as any, updateRemoteTracks)
+        participant.off(event as any, updateParticipant)
       })
       clearInterval(interval)
     }
-  }, [participant, isLocal, remoteVideoElement, remoteScreenElement])
-
-  const tiles = []
-
-  // Тайл камеры
-  if (isLocal) {
-    // Локальная камера
-    tiles.push(
-      <LocalVideoTile
-        key="local-camera"
-        stream={localCameraStream}
-        participant={participant}
-        type="camera"
-        isSpeaking={isSpeaking}
-      />
-    )
-    // Локальный экран
-    if (localScreenStream) {
-      tiles.push(
-        <LocalVideoTile
-          key="local-screen"
-          stream={localScreenStream}
-          participant={participant}
-          type="screen"
-          isSpeaking={false}
-        />
-      )
-    }
-  } else {
-    // Удалённая камера
-    tiles.push(
-      <RemoteVideoTile
-        key="remote-camera"
-        videoElement={remoteVideoElement}
-        hasVideo={hasRemoteCamera}
-        participant={participant}
-        type="camera"
-        isSpeaking={isSpeaking}
-      />
-    )
-    // Удалённый экран
-    if (hasRemoteScreen && remoteScreenElement) {
-      tiles.push(
-        <RemoteVideoTile
-          key="remote-screen"
-          videoElement={remoteScreenElement}
-          hasVideo={hasRemoteScreen}
-          participant={participant}
-          type="screen"
-          isSpeaking={false}
-        />
-      )
-    }
-  }
+  }, [participant, isLocal])
 
   return <>{tiles}</>
 }
@@ -243,19 +179,48 @@ function LocalVideoTile({
   type, 
   isSpeaking 
 }: {
-  stream: MediaStream | null
+  stream: MediaStream
   participant: LocalParticipant
   type: 'camera' | 'screen'
   isSpeaking: boolean
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null)
+  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null)
 
   useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream
-      console.log(`📺 Локальный ${type} поток подключен к видео элементу`)
+    console.log(`📺 Создаём локальное видео ${type} для ${participant.name}`)
+    
+    const video = document.createElement('video')
+    video.autoplay = true
+    video.playsInline = true
+    video.muted = true
+    video.style.width = '100%'
+    video.style.height = '100%'
+    video.style.objectFit = type === 'screen' ? 'contain' : 'cover'
+    video.style.borderRadius = '8px'
+
+    video.srcObject = stream
+    
+    video.onloadedmetadata = () => {
+      console.log(`✅ Метаданные загружены для локального ${type}`)
+      video.play().catch(e => console.error('Ошибка автовоспроизведения:', e))
     }
-  }, [stream, type])
+
+    setVideoElement(video)
+
+    return () => {
+      stream.getTracks().forEach(track => track.stop())
+      video.srcObject = null
+    }
+  }, [stream, participant.name, type])
+
+  useEffect(() => {
+    const container = document.getElementById(`local-${type}-${participant.identity}`)
+    if (container && videoElement) {
+      container.innerHTML = ''
+      container.appendChild(videoElement)
+      console.log(`🎬 Локальное видео ${type} добавлено в контейнер`)
+    }
+  }, [videoElement, participant.identity, type])
 
   const borderColor = isSpeaking && type === 'camera' ? '#00ff00' : 'transparent'
 
@@ -266,42 +231,14 @@ function LocalVideoTile({
       overflow: 'hidden',
       position: 'relative',
       minHeight: type === 'screen' ? '300px' : '200px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
       border: `2px solid ${borderColor}`,
       transition: 'border 0.3s ease',
       marginBottom: '10px'
     }}>
-      {stream ? (
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted={true}
-          style={{ 
-            width: '100%', 
-            height: '100%', 
-            objectFit: type === 'screen' ? 'contain' : 'cover' 
-          }}
-        />
-      ) : (
-        type === 'camera' && (
-          <div style={{
-            width: '80px',
-            height: '80px',
-            borderRadius: '50%',
-            background: isSpeaking ? '#00aa00' : '#007acc',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '2rem',
-            color: 'white'
-          }}>
-            {participant.name?.charAt(0).toUpperCase() || 'U'}
-          </div>
-        )
-      )}
+      <div 
+        id={`local-${type}-${participant.identity}`}
+        style={{ width: '100%', height: '100%' }}
+      />
       
       <div style={{
         position: 'absolute',
@@ -323,26 +260,52 @@ function LocalVideoTile({
 }
 
 function RemoteVideoTile({ 
-  videoElement, 
-  hasVideo, 
+  track, 
   participant, 
   type, 
   isSpeaking 
 }: {
-  videoElement: HTMLVideoElement | null
-  hasVideo: boolean
+  track: any
   participant: RemoteParticipant
   type: 'camera' | 'screen'
   isSpeaking: boolean
 }) {
-  const containerRef = useRef<HTMLDivElement>(null)
+  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null)
 
   useEffect(() => {
-    if (containerRef.current && videoElement && hasVideo) {
-      containerRef.current.innerHTML = ''
-      containerRef.current.appendChild(videoElement)
+    console.log(`📺 Создаём удалённое видео ${type} для ${participant.name}`)
+    
+    const video = document.createElement('video')
+    video.autoplay = true
+    video.playsInline = true
+    video.muted = false
+    video.style.width = '100%'
+    video.style.height = '100%'
+    video.style.objectFit = type === 'screen' ? 'contain' : 'cover'
+
+    try {
+      track.attach(video)
+      setVideoElement(video)
+      console.log(`✅ Удалённый ${type} трек подключён`)
+    } catch (error) {
+      console.error(`❌ Ошибка подключения удалённого ${type}:`, error)
     }
-  }, [videoElement, hasVideo])
+
+    return () => {
+      if (video.parentNode) {
+        video.parentNode.removeChild(video)
+      }
+    }
+  }, [track, participant.name, type])
+
+  useEffect(() => {
+    const container = document.getElementById(`remote-${type}-${participant.identity}`)
+    if (container && videoElement) {
+      container.innerHTML = ''
+      container.appendChild(videoElement)
+      console.log(`🎬 Удалённое видео ${type} добавлено в контейнер`)
+    }
+  }, [videoElement, participant.identity, type])
 
   const borderColor = isSpeaking && type === 'camera' ? '#00ff00' : 'transparent'
 
@@ -353,38 +316,14 @@ function RemoteVideoTile({
       overflow: 'hidden',
       position: 'relative',
       minHeight: type === 'screen' ? '300px' : '200px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
       border: `2px solid ${borderColor}`,
       transition: 'border 0.3s ease',
       marginBottom: '10px'
     }}>
-      <div ref={containerRef} style={{ width: '100%', height: '100%' }}>
-        {!hasVideo && type === 'camera' && (
-          <div style={{
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <div style={{
-              width: '80px',
-              height: '80px',
-              borderRadius: '50%',
-              background: isSpeaking ? '#00aa00' : '#007acc',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '2rem',
-              color: 'white'
-            }}>
-              {participant.name?.charAt(0).toUpperCase() || 'U'}
-            </div>
-          </div>
-        )}
-      </div>
+      <div 
+        id={`remote-${type}-${participant.identity}`}
+        style={{ width: '100%', height: '100%' }}
+      />
       
       <div style={{
         position: 'absolute',
@@ -399,6 +338,60 @@ function RemoteVideoTile({
         {participant.name || participant.identity}
         {type === 'screen' && ' (экран)'}
         {isSpeaking && type === 'camera' && ' 🎤'}
+      </div>
+    </div>
+  )
+}
+
+function AvatarTile({ participant, isSpeaking }: { 
+  participant: LocalParticipant | RemoteParticipant
+  isSpeaking: boolean 
+}) {
+  const isLocal = participant instanceof LocalParticipant
+  const borderColor = isSpeaking ? '#00ff00' : 'transparent'
+
+  return (
+    <div style={{
+      background: '#222',
+      borderRadius: '8px',
+      overflow: 'hidden',
+      position: 'relative',
+      minHeight: '200px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      border: `2px solid ${borderColor}`,
+      transition: 'border 0.3s ease',
+      marginBottom: '10px'
+    }}>
+      <div style={{
+        width: '80px',
+        height: '80px',
+        borderRadius: '50%',
+        background: isSpeaking ? '#00aa00' : '#007acc',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '2rem',
+        color: 'white',
+        transition: 'background 0.3s ease'
+      }}>
+        {participant.name?.charAt(0).toUpperCase() || 'U'}
+      </div>
+      
+      <div style={{
+        position: 'absolute',
+        bottom: '8px',
+        left: '8px',
+        background: 'rgba(0,0,0,0.8)',
+        color: 'white',
+        padding: '4px 8px',
+        borderRadius: '4px',
+        fontSize: '0.8rem'
+      }}>
+        {participant.name || participant.identity}
+        {isLocal && ' (вы)'}
+        {isSpeaking && ' 🎤'}
       </div>
     </div>
   )

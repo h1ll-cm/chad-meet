@@ -7,32 +7,33 @@ interface ParticipantsGridProps {
 }
 
 export default function ParticipantsGrid({ participants }: ParticipantsGridProps) {
-  const [tiles, setTiles] = useState<any[]>([])
+  const [refreshKey, setRefreshKey] = useState(0)
 
+  // Принудительно обновляем сетку каждые 3 секунды
   useEffect(() => {
-    const newTiles = []
-    
-    participants.forEach(participant => {
-      // Основной тайл участника (камера или аватар)
-      newTiles.push({
-        key: `${participant.identity}-main`,
-        participant,
-        type: 'main'
-      })
-      
-      // Отдельный тайл для экраншаринга
-      const screenPub = participant.getTrackPublication(Track.Source.ScreenShare)
-      if (screenPub?.track) {
-        newTiles.push({
-          key: `${participant.identity}-screen`,
-          participant,
-          type: 'screen'
-        })
-      }
+    const interval = setInterval(() => {
+      setRefreshKey(prev => prev + 1)
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const tiles = []
+  
+  participants.forEach(participant => {
+    // Основной тайл участника (камера)
+    tiles.push({
+      key: `${participant.identity}-main-${refreshKey}`,
+      participant,
+      type: 'main'
     })
     
-    setTiles(newTiles)
-  }, [participants])
+    // Отдельный тайл для экраншаринга (всегда добавляем, но показываем только если есть трек)
+    tiles.push({
+      key: `${participant.identity}-screen-${refreshKey}`,
+      participant,
+      type: 'screen'
+    })
+  })
 
   return (
     <div style={{
@@ -61,6 +62,7 @@ function ParticipantTile({ participant, type }: {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [hasVideo, setHasVideo] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
+  const [forceUpdate, setForceUpdate] = useState(0)
   const isLocal = participant instanceof LocalParticipant
 
   useEffect(() => {
@@ -73,23 +75,53 @@ function ParticipantTile({ participant, type }: {
       const publication = participant.getTrackPublication(source)
       const track = publication?.track
 
-      console.log(`Обновление ${type} для ${participant.name}:`, {
+      console.log(`Проверка ${type} для ${participant.name}:`, {
         hasTrack: !!track,
         isLocal,
-        isSubscribed: publication?.isSubscribed
+        isSubscribed: publication?.isSubscribed,
+        trackKind: track?.kind
       })
 
       if (track) {
         try {
-          // Простое прямое подключение
-          track.attach(videoRef.current)
+          // Очищаем предыдущее подключение
+          if (videoRef.current.srcObject) {
+            videoRef.current.srcObject = null
+          }
+
+          if (isLocal) {
+            // Для локального участника используем MediaStream
+            const mediaStream = (track as any).mediaStream || (track as any)._mediaStream
+            if (mediaStream) {
+              videoRef.current.srcObject = mediaStream
+              console.log(`✅ ${type} подключён через MediaStream для ${participant.name}`)
+            } else {
+              // Fallback - создаём MediaStream из MediaStreamTrack
+              const mediaStreamTrack = (track as any).mediaStreamTrack || (track as any)._mediaStreamTrack
+              if (mediaStreamTrack) {
+                const stream = new MediaStream([mediaStreamTrack])
+                videoRef.current.srcObject = stream
+                console.log(`✅ ${type} подключён через MediaStreamTrack для ${participant.name}`)
+              } else {
+                // Последний fallback
+                track.attach(videoRef.current)
+                console.log(`✅ ${type} подключён через attach (fallback) для ${participant.name}`)
+              }
+            }
+          } else {
+            // Для удалённого участника
+            track.attach(videoRef.current)
+            console.log(`✅ ${type} подключён через attach для ${participant.name}`)
+          }
+          
           setHasVideo(true)
-          console.log(`✅ ${type} подключён для ${participant.name}`)
+          setForceUpdate(prev => prev + 1)
         } catch (error) {
           console.error(`❌ Ошибка подключения ${type}:`, error)
           setHasVideo(false)
         }
       } else {
+        console.log(`❌ Нет трека ${type} для ${participant.name}`)
         setHasVideo(false)
       }
 
@@ -107,32 +139,31 @@ function ParticipantTile({ participant, type }: {
     const events = [
       'trackPublished', 'trackUnpublished', 
       'trackSubscribed', 'trackUnsubscribed',
-      'trackMuted', 'trackUnmuted'
+      'trackMuted', 'trackUnmuted',
+      'localTrackPublished', 'localTrackUnpublished'
     ]
 
     events.forEach(event => {
-      participant.on(event as any, updateVideo)
+      participant.on(event as any, () => {
+        console.log(`Событие ${event} для ${participant.name}`)
+        setTimeout(updateVideo, 200)
+      })
     })
 
-    // Регулярная проверка каждые 2 секунды
-    intervalId = setInterval(updateVideo, 2000)
+    // Активная проверка каждую секунду
+    intervalId = setInterval(updateVideo, 1000)
 
     return () => {
       events.forEach(event => {
         participant.off(event as any, updateVideo)
       })
       clearInterval(intervalId)
-      
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream
-        stream.getTracks().forEach(track => track.stop())
-        videoRef.current.srcObject = null
-      }
     }
-  }, [participant, type, isLocal])
+  }, [participant, type, isLocal, forceUpdate])
 
+  // Не показываем экран-тайл если нет видео
   if (type === 'screen' && !hasVideo) {
-    return null // Не показываем пустой экран-тайл
+    return null
   }
 
   const borderColor = isSpeaking && type === 'main' ? '#00ff00' : 'transparent'

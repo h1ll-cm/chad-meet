@@ -1,17 +1,10 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { 
-  VideoTrack,
-} from '@livekit/components-react'
-import { 
-  LocalParticipant, 
-  RemoteParticipant, 
-  Track,
-  TrackPublication
-} from 'livekit-client'
+import { useTracks } from '@livekit/components-react'
+import { Participant, Track } from 'livekit-client'
+import { VideoTrack as VideoTrackComponent, AudioTrack } from '@livekit/components-react'
 
 interface ParticipantsGridProps {
-  participants: (LocalParticipant | RemoteParticipant)[]
+  participants: Participant[]
 }
 
 export default function ParticipantsGrid({ participants }: ParticipantsGridProps) {
@@ -31,53 +24,19 @@ export default function ParticipantsGrid({ participants }: ParticipantsGridProps
   )
 }
 
-function ParticipantTile({ participant }: { participant: LocalParticipant | RemoteParticipant }) {
-  const [cameraTrack, setCameraTrack] = useState<TrackPublication | null>(null)
-  const [screenTrack, setScreenTrack] = useState<TrackPublication | null>(null)
-  const [isSpeaking, setIsSpeaking] = useState(false)
-  
-  const isLocal = participant instanceof LocalParticipant
+function ParticipantTile({ participant }: { participant: Participant }) {
+  const cameraTracks = useTracks([{ source: Track.Source.Camera, participant }])
+  const screenTracks = useTracks([{ source: Track.Source.ScreenShare, participant }])
+  const audioTracks = useTracks([{ source: Track.Source.Microphone, participant }])
 
-  useEffect(() => {
-    const updateTracks = () => {
-      const camera = participant.getTrackPublication(Track.Source.Camera)
-      const screen = participant.getTrackPublication(Track.Source.ScreenShare)
-      const audio = participant.getTrackPublication(Track.Source.Microphone)
+  const hasCamera = cameraTracks.length > 0 && cameraTracks[0].track?.isEnabled
+  const hasScreen = screenTracks.length > 0 && screenTracks[0].track?.isEnabled
+  const isSpeaking = audioTracks.length > 0 && audioTracks[0].track?.isEnabled && !audioTracks[0].publication.isMuted
+  const isLocal = participant.isLocal
 
-      setCameraTrack(camera || null)
-      setScreenTrack(screen || null)
-      setIsSpeaking(!!audio?.track && !audio.isMuted)
-
-      console.log(`👤 ${participant.identity}: 📹=${!!camera?.track} 🖥️=${!!screen?.track} 🎤=${!!audio?.track && !audio.isMuted}`)
-    }
-
-    updateTracks()
-
-    // Расширенные слушатели событий
-    const events = [
-      'trackPublished', 'trackUnpublished',
-      'trackSubscribed', 'trackUnsubscribed', 
-      'trackMuted', 'trackUnmuted',
-      'localTrackPublished', 'localTrackUnpublished'
-    ]
-
-    events.forEach(event => {
-      participant.on(event as any, updateTracks)
-    })
-
-    const Nenerval = setInterval(updateTracks, 1000)
-
-    return () => {
-      events.forEach(event => {
-        participant.off(event as any, updateTracks)
-      })
-      clearInterval(interval)
-    }
-  }, [participant])
-
-  const hasCamera = !!cameraTrack?.track
-  const hasScreen = !!screenTrack?.track
   const displayMode = hasCamera && hasScreen ? 'both' : hasCamera ? 'camera' : hasScreen ? 'screen' : 'avatar'
+
+  console.log(`👤 ${participant.identity}: режим=${displayMode}, 📹=${hasCamera}, 🖥️=${hasScreen}, 🎤=${isSpeaking}`)
 
   return (
     <div style={{
@@ -87,6 +46,7 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
       border: isSpeaking ? '3px solid #00ff00' : '2px solid #333',
       transition: 'border 0.3s ease'
     }}>
+      {/* Заголовок */}
       <div style={{
         color: 'white',
         fontSize: '1rem',
@@ -118,42 +78,39 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
         </div>
       </div>
 
+      {/* Видео область */}
       <div style={{
-        minHeight: '200px',
+        minHeight: '250px',
         borderRadius: '8px',
         overflow: 'hidden'
       }}>
-        {displayMode === 'both' ? (
+        {displayMode === 'both' && (
           <div style={{
             display: 'grid',
             gridTemplateColumns: '1fr 2fr',
             gap: '8px',
             height: '280px'
           }}>
-            <SingleTrackDisplay 
-              trackRef={cameraTrack}
-              type="camera"
-              participant={participant}
-              isSpeaking={isSpeaking}
-            />
-            <SingleTrackDisplay 
-              trackRef={screenTrack}
-              type="screen"
-              participant={participant}
-              isSpeaking={false}
-            />
+            {cameraTracks.map((trackRef) => (
+              <VideoTile key="camera" trackRef={trackRef} type="camera" isSpeaking={isSpeaking} />
+            ))}
+            {screenTracks.map((trackRef) => (
+              <VideoTile key="screen" trackRef={trackRef} type="screen" isSpeaking={false} />
+            ))}
           </div>
-        ) : (
-          <SingleTrackDisplay 
-            trackRef={displayMode === 'camera' ? cameraTrack : screenTrack}
-            type={displayMode}
-            participant={participant}
-            isSpeaking={displayMode === 'camera' ? isSpeaking : false}
-          />
         )}
-        {display Mode === 'avatar' && (
+
+        {displayMode === 'camera' && cameraTracks.map((trackRef) => (
+          <VideoTile key="camera" trackRef={trackRef} type="camera" isSpeaking={isSpeaking} height="280px" />
+        ))}
+
+        {displayMode === 'screen' && screenTracks.map((trackRef) => (
+          <VideoTile key="screen" trackRef={trackRef} type="screen" isSpeaking={false} height="280px" />
+        ))}
+
+        {displayMode === 'avatar' && (
           <div style={{
-            height: '250px',
+            height: '280px',
             background: '#333',
             borderRadius: '8px',
             display: 'flex',
@@ -170,53 +127,38 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
               justifyContent: 'center',
               fontSize: '2.5rem',
               color: 'white',
-              transition: 'all 0.3s ease'
+              transition: 'all 0.3s ease',
+              transform: isSpeaking ? 'scale(1.1)' : 'scale(1)'
             }}>
               {participant.name?.charAt(0).toUpperCase() || 'U'}
             </div>
           </div>
         )}
       </div>
+
+      {/* Аудио трек для звука (только для remote) */}
+      {!isLocal && audioTracks.map((trackRef) => (
+        <AudioTrack key="audio" trackRef={trackRef} />
+      ))}
     </div>
   )
 }
 
-function SingleTrackDisplay({ 
+function VideoTile({ 
   trackRef, 
   type, 
-  participant, 
-  isSpeaking 
-}: {
-  trackRef: TrackPublication | null
-  type: 'camera' | 'screen' | 'avatar'
-  participant: LocalParticipant | RemoteParticipant
+  isSpeaking,
+  height = '100%' 
+}: { 
+  trackRef: any
+  type: 'camera' | 'screen'
   isSpeaking: boolean
+  height?: string
 }) {
-  if (!trackRef) {
-    return (
-      <div style={{ 
-        width: '100%', 
-        height: '100%', 
-        background: type === 'screen' ? '#000' : '#333',
-        borderRadius: '6px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: 'white'
-      }}>
-        {type === 'camera' ? '📹 Нет камеры' :organisms '🖥️ Нет экрана'}
-      </div>
-    )
-  }
-
   return (
-    <div style={{ position: 'relative', height: '100%' }}>
-      <VideoTrack 
-        trackRef={ {
-          participant, 
-          source: type === 'camera' ? Track.Source.Camera : Track.Source.ScreenShare,
-          publication: trackRef
-        } }
+    <div style={{ position: 'relative', height, width: '100%' }}>
+      <VideoTrackComponent 
+        trackRef={trackRef}
         style={{ 
           width: '100%', 
           height: '100%',

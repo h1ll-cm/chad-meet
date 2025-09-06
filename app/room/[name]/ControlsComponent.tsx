@@ -18,7 +18,7 @@ export default function ControlsComponent({ room }: ControlsComponentProps) {
     const updateStates = () => {
       setCameraEnabled(localParticipant.isCameraEnabled)
       setMicEnabled(localParticipant.isMicrophoneEnabled)
-      setScreenEnabled(!!localParticipant.getTrackPublication(Track.Source.ScreenShare))
+      setScreenEnabled(!!localParticipant.getTrackPublication(TrackSource.ScreenShare))
     }
 
     updateStates()
@@ -59,14 +59,14 @@ export default function ControlsComponent({ room }: ControlsComponentProps) {
 
   const toggleScreen = async () => {
     if (screenEnabled) {
-      const screenPub = localParticipant.getTrackPublication(Track.Source.ScreenShare)
+      const screenPub = localParticipant.getTrackPublication(TrackSource.ScreenShare)
       if (screenPub) {
         await localParticipant.unpublishTrack(screenPub.track)
       }
       setScreenEnabled(false)
     } else {
       const tracks = await room.localParticipant.publishTracks([{
-        source: Track.Source.ScreenShare,
+        source: TrackSource.ScreenShare,
         video: true,
         audio: true  // Опционально, если нужен звук экрана
       }])

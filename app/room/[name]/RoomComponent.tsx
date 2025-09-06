@@ -1,18 +1,11 @@
 'use client'
-import { Room } from 'livekit-client'
-import { useParticipants } from '@livekit/components-react'
 import ParticipantsGrid from './ParticipantsGrid'
 import ControlsComponent from './ControlsComponent'
 import ChatComponent from './ChatComponent'
+import { useRoomContext } from '@livekit/components-react'
 
-interface RoomComponentProps {
-  room: Room
-}
-
-export default function RoomComponent({ room }: RoomComponentProps) {
-  const participants = useParticipants({ room })
-
-  console.log(`🏠 Участники в комнате: ${participants.length}`)
+export default function RoomComponent() {
+  const room = useRoomContext() // Получаем room из контекста LiveKitRoom
 
   return (
     <div className="room-container" style={{
@@ -22,7 +15,7 @@ export default function RoomComponent({ room }: RoomComponentProps) {
       background: '#111'
     }}>
       <div className="participants-section">
-        <ParticipantsGrid participants={participants} />
+        <ParticipantsGrid />
       </div>
       
       <div className="sidebar-section" style={{

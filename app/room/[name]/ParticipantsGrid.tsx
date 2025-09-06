@@ -1,7 +1,16 @@
 'use client'
-import { useParticipants, useTracks } from '@livekit/components-react'
-import { Participant, Track } from 'livekit-client'
-import { VideoTrack as VideoTrackComponent, AudioTrack } from '@livekit/components-react'
+import {
+  ParticipantLoop,
+  ParticipantName,
+  Participant,
+  TrackLoop,
+  VideoTrack,
+  AudioTrack,
+  TrackRefContext,
+  useParticipants,
+  useIsSpeaking,
+} from '@livekit/components-react'
+import { Track, Participant as LKParticipant } from 'livekit-client'
 
 export default function ParticipantsGrid() {
   const participants = useParticipants()
@@ -15,97 +24,60 @@ export default function ParticipantsGrid() {
       height: '100%',
       overflow: 'auto'
     }}>
-      {participants.map((participant) => (
-        <ParticipantTile key={participant.identity} participant={participant} />
-      ))}
+      <ParticipantLoop participants={participants}>
+        <ParticipantTile />
+      </ParticipantLoop>
     </div>
   )
 }
 
-function ParticipantTile({ participant }: { participant: Participant }) {
-  const cameraTracks = useTracks([{ source: Track.Source.Camera, participant }])
-  const screenTracks = useTracks([{ source: Track.Source.ScreenShare, participant }])
-  const audioTracks = useTracks([{ source: Track.Source.Microphone, participant }])
+function ParticipantTile() {
+  const participant = TrackRefContext.useTrackContext()?.participant as LKParticipant || null
+  const isSpeaking = useIsSpeaking(participant)
+  const isLocal = participant?.isLocal
 
-  const hasCamera = cameraTracks.length > 0 && cameraTracks[0].track?.isEnabled
-  const hasScreen = screenTracks.length > 0 && screenTracks[0].track?.isEnabled
-  const isSpeaking = audioTracks.length > 0 && audioTracks[0].track?.isEnabled && !audioTracks[0].publication.isMuted
-  const isLocal = participant.isLocal
-
-  const displayMode = hasCamera && hasScreen ? 'both' : hasCamera ? 'camera' : hasScreen ? 'screen' : 'avatar'
-
-  console.log(`👤 ${participant.identity}: режим=${displayMode}, 📹=${hasCamera}, 🖥️=${hasScreen}, 🎤=${isSpeaking}`)
+  if (!participant) return null
 
   return (
-    <div style={{
-      background: '#1a1a1a',
-      borderRadius: '12px',
-      padding: '12px',
-      border: isSpeaking ? '3px solid #00ff00' : '2px solid #333',
-      transition: 'border 0.3s ease'
-    }}>
+    <Participant participant={participant}>
       <div style={{
-        color: 'white',
-        fontSize: '1rem',
-        marginBottom: '12px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px'
+        background: '#1a1a1a',
+        borderRadius: '12px',
+        padding: '12px',
+        border: isSpeaking ? '3px solid #00ff00' : '2px solid #333',
+        transition: 'border 0.3s ease',
+        position: 'relative'
       }}>
+        {/* Заголовок */}
         <div style={{
-          width: '10px',
-          height: '10px',
-          borderRadius: '50%',
-          background: isSpeaking ? '#00ff00' : '#666',
-          transition: 'background 0.3s ease'
-        }} />
-        <span>{participant.name || participant.identity}</span>
-        {isLocal && <span style={{ color: '#007acc' }}>(вы)</span>}
-        
-        <div style={{ 
-          marginLeft: 'auto', 
-          fontSize: '0.8rem', 
-          color: '#888',
+          color: 'white',
+          fontSize: '1rem',
+          marginBottom: '12px',
           display: 'flex',
-          gap: '4px'
+          alignItems: 'center',
+          gap: '8px'
         }}>
-          {hasCamera && '📹'}
-          {hasScreen && '�--- =
-          {hasScreen && '🖥️'}
-          {!hasCamera && !hasScreen && '👤'}
-        </div>
-      </div>
-
-      <div style={{
-        minHeight: '250px',
-        borderRadius: '8px',
-        overflow: 'hidden'
-      }}>
-        {displayMode === 'both' && (
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 2fr',
-            gap: '8px',
-            height: '280px'
-          }}>
-            {cameraTracks.map((trackRef) => (
-              <VideoTile key={trackRef.publication.trackSid} trackRef={trackRef} type="camera" isSpeaking={isSpeaking} />
-            ))}
-            {screenTracks.map((trackRef) => (
-              <VideoTile key={trackRef.publication.trackSid} trackRef={trackRef} type="screen" isSpeaking={false} />
-            ))}
-          </div>
-        )}
+            width: '10px',
+            height: '10px',
+            borderRadius: '50%',
+            background: isSpeaking ? '#00ff00' : '#666',
+            transition: 'background 0.3s ease'
+          }} />
+          <ParticipantName participant={participant} />
+          {isLocal && <span style={{ color: '#007acc' }}>(вы)</span>}
+        </div>
 
-        {displayMode === 'camera' && cameraTracks.map((trackRef) => (
-          <VideoTile key={trackRef.publication.trackSid} trackRef={trackRef} type="camera" isSpeaking={isSpeaking} height="280px" />
-        ))}
+        {/* Видео треки с автоматическим отображением camera + screen */}
+        <TrackLoop>
+          <TrackVideo />
+        </TrackLoop>
 
-        {displayMode === 'screen' && screenTracks.map((trackRef) => (
-          <VideoTile key={trackRef.publication.trackSid} trackRef={trackRef} type="screen" isSpeaking={false} height="280px" />
-        ))}
+        {/* Аудио трек для remote */}
+        {!isLocal && <AudioTrack source={Track.Source.Microphone} participant={participant} />}
 
-        {displayMode === 'avatar' && (
+        {/* Аватар, если нет треков */}
+        {participant.getTracks().length === 0 && (
           <div style={{
             height: '280px',
             background: '#333',
@@ -132,35 +104,31 @@ function ParticipantTile({ participant }: { participant: Participant }) {
           </div>
         )}
       </div>
-
-      {!isLocal && audioTracks.map((trackRef) => (
-        <AudioTrack key={trackRef.publication.trackSid} trackRef={trackRef} />
-      ))}
-    </div>
+    </Participant>
   )
 }
 
-function VideoTile({ 
-  trackRef, 
-  type, 
-  isSpeaking,
-  height = '100%' 
-}: { 
-  trackRef: any
-  type: 'camera' | 'screen'
-  isSpeaking: boolean
-  height?: string
-}) {
+function TrackVideo() {
+  const trackRef = TrackRefContext.useTrackRef()
+  if (trackRef.source !== Track.Source.Camera && trackRef.source !== Track.Source.ScreenShare) {
+    return null
+  }
+
+  const type = trackRef.source === Track.Source.Camera ? 'camera' : 'screen'
+  const isSpeaking = useIsSpeaking(trackRef.participant) && type === 'camera'
+  const objectFit = type === 'screen' ? 'contain' : 'cover'
+  const background = type === 'screen' ? '#000' : '#333'
+
   return (
-    <div style={{ position: 'relative', height, width: '100%' }}>
-      <VideoTrackComponent 
-        trackRef={trackRef}
-        style={{ 
-          width: '100%', 
+    <div style={{ position: 'relative', width: '100%', height: '280px' }}>
+      <VideoTrack
+        {...trackRef}
+        style={{
+          width: '100%',
           height: '100%',
           borderRadius: '6px',
-          objectFit: type === 'screen' ? 'contain' : 'cover',
-          background: type === 'screen' ? '#000' : '#333'
+          objectFit,
+          background,
         }}
       />
       
@@ -177,7 +145,7 @@ function VideoTile({
         {type === 'camera' ? '📹 Камера' : '🖥️ Экран'}
       </div>
       
-      {type === 'camera' && isSpeaking && (
+      {isSpeaking && (
         <div style={{
           position: 'absolute',
           top: '8px',
@@ -189,6 +157,24 @@ function VideoTile({
           fontSize: '0.8rem'
         }}>
           🎤 Говорит
+        </div>
+      )}
+      
+      {/* Если оба трека активны, отобразить в гриде */}
+      {trackRef.participant.getTrack(Track.Source.Camera) && trackRef.participant.getTrack(Track.Source.ScreenShare) && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 2fr',
+          gap: '8px',
+          height: '280px',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%'
+        }}>
+          {/* Камера маленькая слева, экран большой справа */}
+          <VideoTrack source={Track.Source.Camera} participant={trackRef.participant} style={{ objectFit: 'cover', background: '#333' }} />
+          <VideoTrack source={Track.Source.ScreenShare} participant={trackRef.participant} style={{ objectFit: 'contain', background: '#000' }} />
         </div>
       )}
     </div>

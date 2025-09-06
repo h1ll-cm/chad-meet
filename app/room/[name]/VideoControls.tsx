@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Room, Track } from 'livekit-client'
+import { Room, TrackSource } from 'livekit-client';
 
 interface VideoControlsProps {
   room: Room | null

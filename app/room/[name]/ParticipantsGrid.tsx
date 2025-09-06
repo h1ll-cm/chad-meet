@@ -1,27 +1,23 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
-import { LocalParticipant, RemoteParticipant, Track, LocalVideoTrack } from 'livekit-client'
+import { 
+  ParticipantTile,
+  VideoTrack,
+  AudioTrack,
+  useParticipants,
+  useTracks
+} from '@livekit/components-react'
+import { Track, Participant } from 'livekit-client'
+import { useEffect, useState } from 'react'
 
 interface ParticipantsGridProps {
-  participants: (LocalParticipant | RemoteParticipant)[]
+  participants: Participant[]
 }
 
 export default function ParticipantsGrid({ participants }: ParticipantsGridProps) {
-  const [allTiles, setAllTiles] = useState<JSX.Element[]>([])
-
-  useEffect(() => {
-    const tiles = []
-    for (const participant of participants) {
-      tiles.push(<ParticipantTile key={participant.identity + '-camera'} participant={participant} trackType="camera" />)
-      
-      // Добавляем отдельный тайл для экраншаринга, если он включён
-      if (participant.getTrackPublication(Track.Source.ScreenShare)?.track) {
-        tiles.push(<ParticipantTile key={participant.identity + '-screen'} participant={participant} trackType="screen" />)
-      }
-    }
-    setAllTiles(tiles)
-  }, [participants])
-
+  // Получаем все видео и экран треки
+  const videoTracks = useTracks([Track.Source.Camera], { updateOnlyOn: [] })
+  const screenTracks = useTracks([Track.Source.ScreenShare], { updateOnlyOn: [] })
+  
   return (
     <div style={{
       display: 'grid',
@@ -31,109 +27,135 @@ export default function ParticipantsGrid({ participants }: ParticipantsGridProps
       height: '100%',
       overflow: 'auto'
     }}>
-      {allTiles}
+      {/* Отображаем всех участников с камерой */}
+      {participants.map((participant) => {
+        const videoTrack = participant.getTrackPublication(Track.Source.Camera)
+        const screenTrack = participant.getTrackPublication(Track.Source.ScreenShare)
+        const audioTrack = participant.getTrackPublication(Track.Source.Microphone)
+        
+        const isSpeaking = audioTrack?.track && !audioTrack.isMuted
+        
+        return (
+          <div key={participant.identity + '-video'}>
+            <ParticipantVideoTile 
+              participant={participant}
+              trackType="camera"
+              isSpeaking={isSpeaking}
+            />
+          </div>
+        )
+      })}
+
+      {/* Отдельно отображаем экраншаринг */}
+      {participants.map((participant) => {
+        const screenTrack = participant.getTrackPublication(Track.Source.ScreenShare)
+        if (!screenTrack?.track) return null
+        
+        return (
+          <div key={participant.identity + '-screen'}>
+            <ParticipantVideoTile 
+              participant={participant}
+              trackType="screen"
+              isSpeaking={false}
+            />
+          </div>
+        )
+      })}
     </div>
   )
 }
 
-function ParticipantTile({ participant, trackType }: { participant: LocalParticipant | RemoteParticipant; trackType: 'camera' | 'screen' }) {
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const [hasTrack, setHasTrack] = useState(false)
-  const [isSpeaking, setIsSpeaking] = useState(false)
-  const isLocal = participant instanceof LocalParticipant
-
-  useEffect(() => {
-    const source = trackType === 'camera' ? Track.Source.Camera : Track.Source.ScreenShare
-
-    const updateTrack = () => {
-      console.log(`Обновление трека ${trackType} для ${participant.name || participant.identity} (${isLocal ? 'локальный' : 'удалённый'})`)
-
-      const publication = participant.getTrackPublication(source)
-      const track = publication?.track as LocalVideoTrack | undefined
-
-      if (track && videoRef.current) {
-        console.log(`Подключаем ${trackType} для ${participant.name || participant.identity}`)
-
-        // Очищаем предыдущее подключение
-        videoRef.current.srcObject = null
-
-        if (isLocal) {
-          // Для локального участника создаём новый MediaStream
-          const mediaStreamTrack = track.mediaStreamTrack
-          if (mediaStreamTrack) {
-            const stream = new MediaStream([mediaStreamTrack])
-            videoRef.current.srcObject = stream
-            console.log(`Локальный ${trackType} подключён через MediaStream`)
-          }
-        } else {
-          // Для удалённых участников используем attach
-          track.attach(videoRef.current)
-          console.log(`Удалённый ${trackType} подключён через attach`)
-        }
-        setHasTrack(true)
-      } else {
-        console.log(`Отключаем ${trackType} для ${participant.name || participant.identity}`)
-        if (videoRef.current) {
-          videoRef.current.srcObject = null
-        }
-        setHasTrack(false)
-      }
-
-      // Проверка микрофона (только для камеры-тайла)
-      if (trackType === 'camera') {
-        const audioPublication = participant.getTrackPublication(Track.Source.Microphone)
-        const hasAudio = audioPublication?.track && !audioPublication.isMuted
-        setIsSpeaking(hasAudio || false)
-      }
+function ParticipantVideoTile({ 
+  participant, 
+  trackType, 
+  isSpeaking 
+}: { 
+  participant: Participant
+  trackType: 'camera' | 'screen'
+  isSpeaking: boolean
+}) {
+  const source = trackType === 'camera' ? Track.Source.Camera : Track.Source.ScreenShare
+  const publication = participant.getTrackPublication(source)
+  
+  if (!publication?.track) {
+    // Показываем аватар только для камеры
+    if (trackType === 'camera') {
+      return (
+        <div style={{
+          background: '#222',
+          borderRadius: '8px',
+          position: 'relative',
+          minHeight: '200px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          border: isSpeaking ? '2px solid #00ff00' : '1px solid transparent',
+          transition: 'border 0.3s ease'
+        }}>
+          <div style={{
+            width: '80px',
+            height: '80px',
+            borderRadius: '50%',
+            background: isSpeaking ? '#00aa00' : '#007acc',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '2rem',
+            color: 'white',
+            transition: 'background 0.3s ease'
+          }}>
+            {participant.name?.charAt(0).toUpperCase() || 'U'}
+          </div>
+          
+          <div style={{
+            position: 'absolute',
+            bottom: '8px',
+            left: '8px',
+            background: 'rgba(0,0,0,0.7)',
+            color: 'white',
+            padding: '4px 8px',
+            borderRadius: '4px',
+            fontSize: '0.8rem'
+          }}>
+            {participant.name || participant.identity}
+            {isSpeaking && ' 🎤'}
+          </div>
+        </div>
+      )
     }
-
-    // Запускаем сразу
-    updateTrack()
-
-    // Слушаем события
-    const events = ['trackPublished', 'trackUnpublished', 'trackSubscribed', 'trackUnsubscribed', 'trackMuted', 'trackUnmuted', 'localTrackPublished', 'localTrackUnpublished']
-    const listeners = events.map(event => {
-      const listener = () => setTimeout(updateTrack, 100)
-      participant.on(event as any, listener)
-      return { event, listener }
-    })
-
-    // Проверяем каждые 500мс
-    const interval = setInterval(updateTrack, 500)
-
-    return () => {
-      listeners.forEach(({ event, listener }) => participant.off(event as any, listener))
-      clearInterval(interval)
-      if (videoRef.current) {
-        videoRef.current.srcObject = null
-      }
-    }
-  }, [participant, isLocal, trackType])
-
-  if (!hasTrack) return null
+    return null
+  }
 
   const isScreen = trackType === 'screen'
-  const title = isScreen ? 'демонстрация экрана' : 'камера'
-  const borderColor = isSpeaking && !isScreen ? '#00ff00' : 'transparent'
-  const borderWidth = '2px'
+  const title = isScreen ? ' (экран)' : ''
 
   return (
     <div style={{
-      background: '#000',
+      background: isScreen ? '#000' : '#222',
       borderRadius: '8px',
       overflow: 'hidden',
       position: 'relative',
-      minHeight: '200px',
-      border: `${borderWidth} solid ${borderColor}`,
+      minHeight: isScreen ? '300px' : '200px',
+      border: isSpeaking && !isScreen ? '2px solid #00ff00' : '1px solid transparent',
       transition: 'border 0.3s ease'
     }}>
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted={isLocal || isSpeaking}  // Мьют для локального, чтобы не эхо
-        style={{ width: '100%', height: '100%', objectFit: isScreen ? 'contain' : 'cover' }}
+      <VideoTrack 
+        participant={participant} 
+        source={source}
+        style={{ 
+          width: '100%', 
+          height: '100%', 
+          objectFit: isScreen ? 'contain' : 'cover' 
+        }}
       />
+      
+      {!isScreen && (
+        <AudioTrack 
+          participant={participant} 
+          source={Track.Source.Microphone}
+        />
+      )}
+      
       <div style={{
         position: 'absolute',
         bottom: '8px',
@@ -144,8 +166,7 @@ function ParticipantTile({ participant, trackType }: { participant: LocalPartici
         borderRadius: '4px',
         fontSize: '0.8rem'
       }}>
-        {participant.name || participant.identity} ({title})
-        {isLocal && ' (вы)'}
+        {participant.name || participant.identity}{title}
         {isSpeaking && !isScreen && ' 🎤'}
       </div>
     </div>

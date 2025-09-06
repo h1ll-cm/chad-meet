@@ -1,38 +1,38 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
-import { LocalParticipant, RemoteParticipant, Track } from 'livekit-client'
+import { useEffect, useRef } from 'react'
+import { LocalParticipant, RemoteParticipant } from 'livekit-client'
+import { useVideo } from './VideoContext'
 
 interface ParticipantsGridProps {
   participants: (LocalParticipant | RemoteParticipant)[]
 }
 
 export default function ParticipantsGrid({ participants }: ParticipantsGridProps) {
-  const [refreshKey, setRefreshKey] = useState(0)
-
-  // Принудительно обновляем сетку каждые 3 секунды
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setRefreshKey(prev => prev + 1)
-    }, 3000)
-    return () => clearInterval(interval)
-  }, [])
+  const { participants: videoParticipants } = useVideo()
 
   const tiles = []
   
-  participants.forEach(participant => {
-    // Основной тайл участника (камера)
-    tiles.push({
-      key: `${participant.identity}-main-${refreshKey}`,
-      participant,
-      type: 'main'
-    })
+  // Создаём тайлы для каждого участника
+  videoParticipants.forEach((participant, id) => {
+    // Основной тайл (камера или аватар)
+    tiles.push(
+      <ParticipantTile 
+        key={`${id}-main`} 
+        participant={participant}
+        type="main"
+      />
+    )
     
-    // Отдельный тайл для экраншаринга (всегда добавляем, но показываем только если есть трек)
-    tiles.push({
-      key: `${participant.identity}-screen-${refreshKey}`,
-      participant,
-      type: 'screen'
-    })
+    // Тайл экраншаринга (если есть)
+    if (participant.hasScreen && participant.screenElement) {
+      tiles.push(
+        <ParticipantTile 
+          key={`${id}-screen`} 
+          participant={participant}
+          type="screen"
+        />
+      )
+    }
   })
 
   return (
@@ -44,129 +44,37 @@ export default function ParticipantsGrid({ participants }: ParticipantsGridProps
       height: '100%',
       overflow: 'auto'
     }}>
-      {tiles.map(tile => (
-        <ParticipantTile 
-          key={tile.key} 
-          participant={tile.participant} 
-          type={tile.type}
-        />
-      ))}
+      {tiles}
     </div>
   )
 }
 
 function ParticipantTile({ participant, type }: { 
-  participant: LocalParticipant | RemoteParticipant
-  type: 'main' | 'screen' 
+  participant: any
+  type: 'main' | 'screen'
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const [hasVideo, setHasVideo] = useState(false)
-  const [isSpeaking, setIsSpeaking] = useState(false)
-  const [forceUpdate, setForceUpdate] = useState(0)
-  const isLocal = participant instanceof LocalParticipant
+  const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    let intervalId: NodeJS.Timeout
+    if (!containerRef.current) return
 
-    const updateVideo = () => {
-      if (!videoRef.current) return
-
-      const source = type === 'screen' ? Track.Source.ScreenShare : Track.Source.Camera
-      const publication = participant.getTrackPublication(source)
-      const track = publication?.track
-
-      console.log(`Проверка ${type} для ${participant.name}:`, {
-        hasTrack: !!track,
-        isLocal,
-        isSubscribed: publication?.isSubscribed,
-        trackKind: track?.kind
-      })
-
-      if (track) {
-        try {
-          // Очищаем предыдущее подключение
-          if (videoRef.current.srcObject) {
-            videoRef.current.srcObject = null
-          }
-
-          if (isLocal) {
-            // Для локального участника используем MediaStream
-            const mediaStream = (track as any).mediaStream || (track as any)._mediaStream
-            if (mediaStream) {
-              videoRef.current.srcObject = mediaStream
-              console.log(`✅ ${type} подключён через MediaStream для ${participant.name}`)
-            } else {
-              // Fallback - создаём MediaStream из MediaStreamTrack
-              const mediaStreamTrack = (track as any).mediaStreamTrack || (track as any)._mediaStreamTrack
-              if (mediaStreamTrack) {
-                const stream = new MediaStream([mediaStreamTrack])
-                videoRef.current.srcObject = stream
-                console.log(`✅ ${type} подключён через MediaStreamTrack для ${participant.name}`)
-              } else {
-                // Последний fallback
-                track.attach(videoRef.current)
-                console.log(`✅ ${type} подключён через attach (fallback) для ${participant.name}`)
-              }
-            }
-          } else {
-            // Для удалённого участника
-            track.attach(videoRef.current)
-            console.log(`✅ ${type} подключён через attach для ${participant.name}`)
-          }
-          
-          setHasVideo(true)
-          setForceUpdate(prev => prev + 1)
-        } catch (error) {
-          console.error(`❌ Ошибка подключения ${type}:`, error)
-          setHasVideo(false)
-        }
-      } else {
-        console.log(`❌ Нет трека ${type} для ${participant.name}`)
-        setHasVideo(false)
-      }
-
-      // Проверка микрофона (только для основного тайла)
-      if (type === 'main') {
-        const audioPub = participant.getTrackPublication(Track.Source.Microphone)
-        setIsSpeaking(!!audioPub?.track && !audioPub.isMuted)
-      }
+    const videoElement = type === 'main' ? participant.cameraElement : participant.screenElement
+    
+    if (videoElement) {
+      // Очищаем контейнер
+      containerRef.current.innerHTML = ''
+      
+      // Добавляем видео элемент
+      videoElement.style.width = '100%'
+      videoElement.style.height = '100%'
+      videoElement.style.objectFit = type === 'screen' ? 'contain' : 'cover'
+      
+      containerRef.current.appendChild(videoElement)
     }
+  }, [participant, type])
 
-    // Первоначальное обновление
-    updateVideo()
-
-    // Слушаем все события
-    const events = [
-      'trackPublished', 'trackUnpublished', 
-      'trackSubscribed', 'trackUnsubscribed',
-      'trackMuted', 'trackUnmuted',
-      'localTrackPublished', 'localTrackUnpublished'
-    ]
-
-    events.forEach(event => {
-      participant.on(event as any, () => {
-        console.log(`Событие ${event} для ${participant.name}`)
-        setTimeout(updateVideo, 200)
-      })
-    })
-
-    // Активная проверка каждую секунду
-    intervalId = setInterval(updateVideo, 1000)
-
-    return () => {
-      events.forEach(event => {
-        participant.off(event as any, updateVideo)
-      })
-      clearInterval(intervalId)
-    }
-  }, [participant, type, isLocal, forceUpdate])
-
-  // Не показываем экран-тайл если нет видео
-  if (type === 'screen' && !hasVideo) {
-    return null
-  }
-
-  const borderColor = isSpeaking && type === 'main' ? '#00ff00' : 'transparent'
+  const hasVideo = type === 'main' ? participant.hasCamera : participant.hasScreen
+  const borderColor = participant.isSpeaking && type === 'main' ? '#00ff00' : 'transparent'
 
   return (
     <div style={{
@@ -181,36 +89,32 @@ function ParticipantTile({ participant, type }: {
       border: `2px solid ${borderColor}`,
       transition: 'border 0.3s ease'
     }}>
-      {hasVideo ? (
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted={isLocal}
-          style={{ 
-            width: '100%', 
-            height: '100%', 
-            objectFit: type === 'screen' ? 'contain' : 'cover' 
-          }}
-        />
-      ) : (
-        type === 'main' && (
+      <div ref={containerRef} style={{ width: '100%', height: '100%' }}>
+        {!hasVideo && type === 'main' && (
           <div style={{
-            width: '80px',
-            height: '80px',
-            borderRadius: '50%',
-            background: isSpeaking ? '#00aa00' : '#007acc',
+            width: '100%',
+            height: '100%',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '2rem',
-            color: 'white',
-            transition: 'background 0.3s ease'
+            justifyContent: 'center'
           }}>
-            {participant.name?.charAt(0).toUpperCase() || 'U'}
+            <div style={{
+              width: '80px',
+              height: '80px',
+              borderRadius: '50%',
+              background: participant.isSpeaking ? '#00aa00' : '#007acc',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '2rem',
+              color: 'white',
+              transition: 'background 0.3s ease'
+            }}>
+              {participant.name?.charAt(0).toUpperCase() || 'U'}
+            </div>
           </div>
-        )
-      )}
+        )}
+      </div>
       
       <div style={{
         position: 'absolute',
@@ -222,10 +126,10 @@ function ParticipantTile({ participant, type }: {
         borderRadius: '4px',
         fontSize: '0.8rem'
       }}>
-        {participant.name || participant.identity}
+        {participant.name}
         {type === 'screen' && ' (экран)'}
-        {isLocal && ' (вы)'}
-        {isSpeaking && type === 'main' && ' 🎤'}
+        {participant.isLocal && ' (вы)'}
+        {participant.isSpeaking && type === 'main' && ' 🎤'}
       </div>
     </div>
   )

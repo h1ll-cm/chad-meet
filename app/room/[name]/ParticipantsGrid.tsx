@@ -29,27 +29,33 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
   const [hasVideo, setHasVideo] = useState(false)
   const [hasScreen, setHasScreen] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
+  const [forceUpdate, setForceUpdate] = useState(0)
 
   useEffect(() => {
     const updateTracks = () => {
+      console.log(`Обновление треков для ${participant.name || participant.identity}`)
+      
       // Проверяем камеру
       const videoPublication = participant.getTrackPublication(Track.Source.Camera)
       const videoTrack = videoPublication?.track
       
       if (videoTrack && videoRef.current) {
-        // Для локального участника тоже подключаем видео
-        if (participant instanceof LocalParticipant) {
-          // Для локального участника используем mediaStream напрямую
-          if (videoTrack.mediaStream) {
-            videoRef.current.srcObject = videoTrack.mediaStream
-          }
-        } else {
-          // Для удалённых участников используем attach
-          videoTrack.attach(videoRef.current)
+        console.log(`Подключаем видео для ${participant.name || participant.identity}`)
+        
+        // Отключаем старое подключение
+        if (videoRef.current.srcObject) {
+          videoRef.current.srcObject = null
         }
+        
+        // Подключаем заново
+        videoTrack.attach(videoRef.current)
         setHasVideo(true)
+        
+        // Принудительно обновляем состояние
+        setForceUpdate(prev => prev + 1)
       } else {
-        if (videoRef.current) {
+        console.log(`Отключаем видео для ${participant.name || participant.identity}`)
+        if (videoRef.current && videoRef.current.srcObject) {
           videoRef.current.srcObject = null
         }
         setHasVideo(false)
@@ -60,24 +66,24 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
       const screenTrack = screenPublication?.track
       
       if (screenTrack && screenRef.current) {
-        if (participant instanceof LocalParticipant) {
-          // Для локального участника
-          if (screenTrack.mediaStream) {
-            screenRef.current.srcObject = screenTrack.mediaStream
-          }
-        } else {
-          // Для удалённых участников
-          screenTrack.attach(screenRef.current)
+        console.log(`Подключаем экран для ${participant.name || participant.identity}`)
+        
+        // Отключаем старое подключение
+        if (screenRef.current.srcObject) {
+          screenRef.current.srcObject = null
         }
+        
+        // Подключаем заново
+        screenTrack.attach(screenRef.current)
         setHasScreen(true)
       } else {
-        if (screenRef.current) {
+        if (screenRef.current && screenRef.current.srcObject) {
           screenRef.current.srcObject = null
         }
         setHasScreen(false)
       }
 
-      // Простая проверка микрофона
+      // Проверяем микрофон
       const audioPublication = participant.getTrackPublication(Track.Source.Microphone)
       const hasAudio = audioPublication?.track && !audioPublication.isMuted
       setIsSpeaking(hasAudio || false)
@@ -87,15 +93,27 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
     updateTracks()
 
     // Слушаем все события изменения треков
-    participant.on('trackPublished', updateTracks)
-    participant.on('trackUnpublished', updateTracks)
-    participant.on('trackSubscribed', updateTracks)
+    participant.on('trackPublished', (publication) => {
+      console.log(`Трек опубликован: ${publication.source} для ${participant.name || participant.identity}`)
+      setTimeout(updateTracks, 100) // Небольшая задержка для обработки
+    })
+    
+    participant.on('trackUnpublished', (publication) => {
+      console.log(`Трек отключён: ${publication.source} для ${participant.name || participant.identity}`)
+      updateTracks()
+    })
+    
+    participant.on('trackSubscribed', (track, publication) => {
+      console.log(`Трек подписан: ${publication.source} для ${participant.name || participant.identity}`)
+      setTimeout(updateTracks, 100)
+    })
+    
     participant.on('trackUnsubscribed', updateTracks)
     participant.on('trackMuted', updateTracks)
     participant.on('trackUnmuted', updateTracks)
 
-    // Проверяем каждую секунду
-    const interval = setInterval(updateTracks, 1000)
+    // Проверяем чаще для быстрого обновления
+    const interval = setInterval(updateTracks, 500)
 
     return () => {
       participant.off('trackPublished', updateTracks)
@@ -105,8 +123,16 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
       participant.off('trackMuted', updateTracks)
       participant.off('trackUnmuted', updateTracks)
       clearInterval(interval)
+      
+      // Очищаем видео элементы
+      if (videoRef.current) {
+        videoRef.current.srcObject = null
+      }
+      if (screenRef.current) {
+        screenRef.current.srcObject = null
+      }
     }
-  }, [participant])
+  }, [participant, forceUpdate])
 
   // Цвет рамки: зелёный если микрофон включён
   const borderColor = isSpeaking ? '#00ff00' : 'transparent'

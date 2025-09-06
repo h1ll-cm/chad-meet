@@ -15,13 +15,8 @@ export default function VideoControls({ room }: VideoControlsProps) {
     if (!room) return
     
     try {
-      if (isCameraOn) {
-        await room.localParticipant.unpublishTrack(room.localParticipant.getTrack(Track.Source.Camera)?.track!)
-        setIsCameraOn(false)
-      } else {
-        await room.localParticipant.enableCameraAndMicrophone()
-        setIsCameraOn(true)
-      }
+      await room.localParticipant.setCameraEnabled(!isCameraOn)
+      setIsCameraOn(!isCameraOn)
     } catch (error) {
       console.error('Ошибка камеры:', error)
     }
@@ -31,13 +26,8 @@ export default function VideoControls({ room }: VideoControlsProps) {
     if (!room) return
     
     try {
-      if (isMicOn) {
-        await room.localParticipant.unpublishTrack(room.localParticipant.getTrack(Track.Source.Microphone)?.track!)
-        setIsMicOn(false)
-      } else {
-        await room.localParticipant.enableCameraAndMicrophone()
-        setIsMicOn(true)
-      }
+      await room.localParticipant.setMicrophoneEnabled(!isMicOn)
+      setIsMicOn(!isMicOn)
     } catch (error) {
       console.error('Ошибка микрофона:', error)
     }
@@ -47,13 +37,8 @@ export default function VideoControls({ room }: VideoControlsProps) {
     if (!room) return
     
     try {
-      if (isScreenSharing) {
-        await room.localParticipant.unpublishTrack(room.localParticipant.getTrack(Track.Source.ScreenShare)?.track!)
-        setIsScreenSharing(false)
-      } else {
-        await room.localParticipant.setScreenShareEnabled(true)
-        setIsScreenSharing(true)
-      }
+      await room.localParticipant.setScreenShareEnabled(!isScreenSharing)
+      setIsScreenSharing(!isScreenSharing)
     } catch (error) {
       console.error('Ошибка демонстрации экрана:', error)
     }

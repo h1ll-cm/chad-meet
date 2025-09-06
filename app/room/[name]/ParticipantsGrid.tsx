@@ -9,93 +9,104 @@ interface ParticipantsGridProps {
 export default function ParticipantsGrid({ participants }: ParticipantsGridProps) {
   return (
     <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '10px',
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
+      gap: '15px',
       padding: '1rem',
       height: '100%',
       overflow: 'auto'
     }}>
       {participants.map((participant) => (
-        <ParticipantContainer key={participant.identity} participant={participant} />
+        <ParticipantCard key={participant.identity} participant={participant} />
       ))}
     </div>
   )
 }
 
-function ParticipantContainer({ participant }: { participant: LocalParticipant | RemoteParticipant }) {
-  const [hasCamera, setHasCamera] = useState(false)
-  const [hasScreen, setHasScreen] = useState(false)
+function ParticipantCard({ participant }: { participant: LocalParticipant | RemoteParticipant }) {
+  const [tracks, setTracks] = useState<{
+    camera: any | null
+    screen: any | null
+    audio: any | null
+  }>({ camera: null, screen: null, audio: null })
+  
   const [isSpeaking, setIsSpeaking] = useState(false)
-  const [layoutMode, setLayoutMode] = useState<'camera-only' | 'screen-only' | 'both'>('camera-only')
-
   const isLocal = participant instanceof LocalParticipant
 
   useEffect(() => {
-    const updateState = () => {
-      const cameraTrack = participant.getTrackPublication(Track.Source.Camera)?.track
-      const screenTrack = participant.getTrackPublication(Track.Source.ScreenShare)?.track
-      const audioTrack = participant.getTrackPublication(Track.Source.Microphone)?.track
+    let mounted = true
 
-      const cameraActive = !!cameraTrack
-      const screenActive = !!screenTrack
-      const speaking = !!audioTrack && !audioTrack.isMuted
+    const updateTracks = () => {
+      if (!mounted) return
 
-      setHasCamera(cameraActive)
-      setHasScreen(screenActive)
-      setIsSpeaking(speaking)
+      const cameraPublication = participant.getTrackPublication(Track.Source.Camera)
+      const screenPublication = participant.getTrackPublication(Track.Source.ScreenShare)
+      const audioPublication = participant.getTrackPublication(Track.Source.Microphone)
 
-      // Определяем режим лейаута
-      if (cameraActive && screenActive) {
-        setLayoutMode('both')
-      } else if (screenActive) {
-        setLayoutMode('screen-only')
-      } else {
-        setLayoutMode('camera-only')
+      const cameraTrack = cameraPublication?.track
+      const screenTrack = screenPublication?.track
+      const audioTrack = audioPublication?.track
+
+      const newTracks = {
+        camera: cameraTrack,
+        screen: screenTrack,
+        audio: audioTrack
       }
 
-      console.log(`📊 ${participant.name}: камера=${cameraActive}, экран=${screenActive}, режим=${layoutMode}`)
+      const speaking = !!audioTrack && !audioPublication.isMuted
+
+      setTracks(newTracks)
+      setIsSpeaking(speaking)
+
+      console.log(`🔄 ${participant.name}: 📹=${!!cameraTrack} 🖥️=${!!screenTrack} 🎤=${speaking}`)
     }
 
-    updateState()
+    // Начальное обновление
+    updateTracks()
 
+    // События для всех типов участников
     const events = [
-      'trackPublished', 'trackUnpublished',
-      'trackSubscribed', 'trackUnsubscribed',
-      'trackMuted', 'trackUnmuted',
-      'localTrackPublished', 'localTrackUnpublished'
+      'trackPublished',
+      'trackUnpublished', 
+      'trackSubscribed',
+      'trackUnsubscribed',
+      'trackMuted',
+      'trackUnmuted'
     ]
 
     events.forEach(event => {
-      participant.on(event as any, updateState)
+      participant.on(event as any, updateTracks)
     })
 
-    const interval = setInterval(updateState, 2000)
+    // Дополнительная проверка каждые 3 секунды
+    const interval = setInterval(updateTracks, 3000)
 
     return () => {
+      mounted = false
       events.forEach(event => {
-        participant.off(event as any, updateState)
+        participant.off(event as any, updateTracks)
       })
       clearInterval(interval)
     }
-  }, [participant, layoutMode])
+  }, [participant])
 
-  // Определяем какие компоненты показывать
-  const showCamera = hasCamera || (!hasCamera && !hasScreen)
-  const showScreen = hasScreen
+  const hasCamera = !!tracks.camera
+  const hasScreen = !!tracks.screen
+  const displayMode = hasCamera && hasScreen ? 'both' : hasCamera ? 'camera' : hasScreen ? 'screen' : 'avatar'
 
   return (
     <div style={{
-      background: '#111',
+      background: '#1a1a1a',
       borderRadius: '12px',
-      padding: '10px',
-      marginBottom: '10px'
+      padding: '12px',
+      border: isSpeaking ? '2px solid #00ff00' : '2px solid transparent',
+      transition: 'border 0.3s ease'
     }}>
-      {/* Заголовок участника */}
+      {/* Заголовок */}
       <div style={{
         color: 'white',
         fontSize: '1rem',
-        marginBottom: '10px',
+        marginBottom: '12px',
         display: 'flex',
         alignItems: 'center',
         gap: '8px'
@@ -104,101 +115,148 @@ function ParticipantContainer({ participant }: { participant: LocalParticipant |
           width: '8px',
           height: '8px',
           borderRadius: '50%',
-          background: isSpeaking ? '#00ff00' : '#666'
+          background: isSpeaking ? '#00ff00' : '#666',
+          transition: 'background 0.3s ease'
         }} />
         {participant.name || participant.identity}
         {isLocal && ' (вы)'}
-        <div style={{
-          fontSize: '0.8rem',
-          color: '#888',
-          marginLeft: 'auto'
-        }}>
-          {layoutMode === 'both' && '📹 + 🖥️'}
-          {layoutMode === 'camera-only' && '📹'}
-          {layoutMode === 'screen-only' && '🖥️'}
+        
+        <div style={{ marginLeft: 'auto', fontSize: '0.8rem', color: '#888' }}>
+          {displayMode === 'both' && '📹🖥️'}
+          {displayMode === 'camera' && '📹'}
+          {displayMode === 'screen' && '🖥️'}
+          {displayMode === 'avatar' && '👤'}
         </div>
       </div>
 
-      {/* Видео контейнер */}
-      <div style={{
-        display: layoutMode === 'both' ? 'grid' : 'block',
-        gridTemplateColumns: layoutMode === 'both' ? '2fr 3fr' : '1fr',
-        gap: layoutMode === 'both' ? '10px' : '0',
-        minHeight: '200px'
-      }}>
-        {/* Камера */}
-        {showCamera && (
-          <VideoTile
-            participant={participant}
-            source={Track.Source.Camera}
-            type="camera"
-            isSpeaking={isSpeaking}
-            isMain={layoutMode === 'camera-only'}
-            hasVideo={hasCamera}
-          />
-        )}
-
-        {/* Экран */}
-        {showScreen && (
-          <VideoTile
-            participant={participant}
-            source={Track.Source.ScreenShare}
-            type="screen"
-            isSpeaking={false}
-            isMain={layoutMode === 'screen-only'}
-            hasVideo={hasScreen}
-          />
-        )}
-      </div>
+      {/* Видео область */}
+      <VideoDisplay 
+        participant={participant}
+        tracks={tracks}
+        displayMode={displayMode}
+        isSpeaking={isSpeaking}
+      />
     </div>
   )
 }
 
-function VideoTile({ 
+function VideoDisplay({ 
   participant, 
-  source, 
-  type, 
-  isSpeaking, 
-  isMain, 
-  hasVideo 
+  tracks, 
+  displayMode, 
+  isSpeaking 
 }: {
   participant: LocalParticipant | RemoteParticipant
-  source: Track.Source
-  type: 'camera' | 'screen'
+  tracks: { camera: any | null, screen: any | null, audio: any | null }
+  displayMode: 'both' | 'camera' | 'screen' | 'avatar'
   isSpeaking: boolean
-  isMain: boolean
-  hasVideo: boolean
 }) {
-  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null)
   const isLocal = participant instanceof LocalParticipant
 
-  useEffect(() => {
-    const publication = participant.getTrackPublication(source)
-    const track = publication?.track
+  if (displayMode === 'avatar') {
+    return <AvatarDisplay participant={participant} isSpeaking={isSpeaking} />
+  }
 
-    if (!track) {
-      setVideoElement(null)
+  if (displayMode === 'both') {
+    return (
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 2fr',
+        gap: '8px',
+        height: '250px'
+      }}>
+        <SingleVideoDisplay
+          key={`${participant.identity}-camera`}
+          participant={participant}
+          track={tracks.camera}
+          type="camera"
+          isSpeaking={isSpeaking}
+        />
+        <SingleVideoDisplay
+          key={`${participant.identity}-screen`}
+          participant={participant}
+          track={tracks.screen}
+          type="screen"
+          isSpeaking={false}
+        />
+      </div>
+    )
+  }
+
+  // Одиночное видео (camera или screen)
+  const track = displayMode === 'camera' ? tracks.camera : tracks.screen
+  return (
+    <div style={{ height: '250px' }}>
+      <SingleVideoDisplay
+        key={`${participant.identity}-${displayMode}`}
+        participant={participant}
+        track={track}
+        type={displayMode}
+        isSpeaking={displayMode === 'camera' ? isSpeaking : false}
+      />
+    </div>
+  )
+}
+
+function SingleVideoDisplay({ 
+  participant, 
+  track, 
+  type, 
+  isSpeaking 
+}: {
+  participant: LocalParticipant | RemoteParticipant
+  track: any
+  type: 'camera' | 'screen'
+  isSpeaking: boolean
+}) {
+  const isLocal = participant instanceof LocalParticipant
+  const containerId = `video-${participant.identity}-${type}-${Date.now()}`
+
+  useEffect(() => {
+    if (!track) return
+
+    console.log(`🎬 Создаём видео ${type} для ${participant.name}`)
+
+    const container = document.getElementById(containerId)
+    if (!container) {
+      console.log(`❌ Контейнер не найден: ${containerId}`)
       return
     }
 
-    console.log(`🎬 Создаём видео ${type} для ${participant.name}`)
+    // Очищаем контейнер
+    container.innerHTML = ''
 
     const video = document.createElement('video')
     video.autoplay = true
     video.playsInline = true
-    video.muted = isLocal || type === 'screen'
+    video.muted = isLocal
     video.style.width = '100%'
     video.style.height = '100%'
     video.style.objectFit = type === 'screen' ? 'contain' : 'cover'
-    video.style.borderRadius = '8px'
+    video.style.borderRadius = '6px'
+    video.style.background = type === 'screen' ? '#000' : '#333'
 
     try {
       track.attach(video)
-      setVideoElement(video)
-      console.log(`✅ ${type} подключён для ${participant.name}`)
+      container.appendChild(video)
+      console.log(`✅ ${type} видео добавлено для ${participant.name}`)
     } catch (error) {
       console.error(`❌ Ошибка подключения ${type}:`, error)
-      setVideoElement(null)
+      // Показываем заглушку
+      container.innerHTML = `
+        <div style="
+          width: 100%; 
+          height: 100%; 
+          background: #333; 
+          display: flex; 
+          align-items: center; 
+          justify-content: center;
+          color: white;
+          border-radius: 6px;
+        ">
+          ${type === 'camera' ? '📹' : '🖥️'} Ошибка загрузки
+        </div>
+      `
     }
 
     return () => {
@@ -206,92 +264,81 @@ function VideoTile({
         video.parentNode.removeChild(video)
       }
     }
-  }, [participant, source, type, isLocal])
-
-  useEffect(() => {
-    const containerId = `video-${participant.identity}-${type}`
-    const container = document.getElementById(containerId)
-    
-    if (container && videoElement) {
-      container.innerHTML = ''
-      container.appendChild(videoElement)
-      console.log(`📺 Видео ${type} добавлено в контейнер`)
-    }
-  }, [videoElement, participant.identity, type])
-
-  const height = isMain ? '300px' : '150px'
-  const borderColor = isSpeaking && type === 'camera' ? '#00ff00' : 'transparent'
+  }, [track, participant.identity, type, isLocal, containerId])
 
   return (
     <div style={{
-      background: type === 'screen' ? '#000' : '#222',
-      borderRadius: '8px',
-      overflow: 'hidden',
       position: 'relative',
-      height,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      border: `2px solid ${borderColor}`,
-      transition: 'border 0.3s ease'
+      width: '100%',
+      height: '100%',
+      background: type === 'screen' ? '#000' : '#333',
+      borderRadius: '8px',
+      overflow: 'hidden'
     }}>
-      <div 
-        id={`video-${participant.identity}-${type}`}
-        style={{ width: '100%', height: '100%' }}
-      >
-        {!hasVideo && type === 'camera' && (
-          <div style={{
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <div style={{
-              width: isMain ? '80px' : '50px',
-              height: isMain ? '80px' : '50px',
-              borderRadius: '50%',
-              background: isSpeaking ? '#00aa00' : '#007acc',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: isMain ? '2rem' : '1.2rem',
-              color: 'white',
-              transition: 'all 0.3s ease'
-            }}>
-              {participant.name?.charAt(0).toUpperCase() || 'U'}
-            </div>
-          </div>
-        )}
-      </div>
+      <div id={containerId} style={{ width: '100%', height: '100%' }} />
       
-      {/* Лейбл */}
+      {/* Лейбл типа */}
       <div style={{
         position: 'absolute',
-        top: '8px',
-        right: '8px',
-        background: 'rgba(0,0,0,0.8)',
-        color: 'white',
-        padding: '4px 8px',
-        borderRadius: '4px',
-        fontSize: '0.8rem'
-      }}>
-        {type === 'camera' ? '📹' : '🖥️'}
-        {isMain && ' (главный)'}
-      </div>
-      
-      {/* Индикатор качества */}
-      <div style={{
-        position: 'absolute',
-        bottom: '8px',
-        right: '8px',
-        background: 'rgba(0,0,0,0.6)',
+        top: '6px',
+        left: '6px',
+        background: 'rgba(0,0,0,0.7)',
         color: 'white',
         padding: '2px 6px',
         borderRadius: '4px',
-        fontSize: '0.7rem'
+        fontSize: '0.75rem'
       }}>
-        {hasVideo ? '🟢' : '🔴'}
+        {type === 'camera' ? '📹 Камера' : '🖥️ Экран'}
+      </div>
+
+      {/* Индикатор звука для камеры */}
+      {type === 'camera' && isSpeaking && (
+        <div style={{
+          position: 'absolute',
+          top: '6px',
+          right: '6px',
+          background: 'rgba(0,255,0,0.8)',
+          color: 'white',
+          padding: '2px 6px',
+          borderRadius: '4px',
+          fontSize: '0.75rem'
+        }}>
+          🎤
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AvatarDisplay({ participant, isSpeaking }: { 
+  participant: LocalParticipant | RemoteParticipant
+  isSpeaking: boolean 
+}) {
+  const isLocal = participant instanceof LocalParticipant
+
+  return (
+    <div style={{
+      height: '250px',
+      background: '#333',
+      borderRadius: '8px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }}>
+      <div style={{
+        width: '100px',
+        height: '100px',
+        borderRadius: '50%',
+        background: isSpeaking ? '#00aa00' : '#007acc',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '2.5rem',
+        color: 'white',
+        transition: 'background 0.3s ease',
+        boxShadow: isSpeaking ? '0 0 20px rgba(0,255,0,0.5)' : 'none'
+      }}>
+        {participant.name?.charAt(0).toUpperCase() || 'U'}
       </div>
     </div>
   )

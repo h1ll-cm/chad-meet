@@ -37,9 +37,21 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
       const videoTrack = videoPublication?.track
       
       if (videoTrack && videoRef.current) {
-        videoTrack.attach(videoRef.current)
+        // Для локального участника тоже подключаем видео
+        if (participant instanceof LocalParticipant) {
+          // Для локального участника используем mediaStream напрямую
+          if (videoTrack.mediaStream) {
+            videoRef.current.srcObject = videoTrack.mediaStream
+          }
+        } else {
+          // Для удалённых участников используем attach
+          videoTrack.attach(videoRef.current)
+        }
         setHasVideo(true)
       } else {
+        if (videoRef.current) {
+          videoRef.current.srcObject = null
+        }
         setHasVideo(false)
       }
 
@@ -48,13 +60,24 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
       const screenTrack = screenPublication?.track
       
       if (screenTrack && screenRef.current) {
-        screenTrack.attach(screenRef.current)
+        if (participant instanceof LocalParticipant) {
+          // Для локального участника
+          if (screenTrack.mediaStream) {
+            screenRef.current.srcObject = screenTrack.mediaStream
+          }
+        } else {
+          // Для удалённых участников
+          screenTrack.attach(screenRef.current)
+        }
         setHasScreen(true)
       } else {
+        if (screenRef.current) {
+          screenRef.current.srcObject = null
+        }
         setHasScreen(false)
       }
 
-      // Простая проверка микрофона - есть ли включённый трек
+      // Простая проверка микрофона
       const audioPublication = participant.getTrackPublication(Track.Source.Microphone)
       const hasAudio = audioPublication?.track && !audioPublication.isMuted
       setIsSpeaking(hasAudio || false)
@@ -105,7 +128,7 @@ function ParticipantTile({ participant }: { participant: LocalParticipant | Remo
           ref={screenRef}
           autoPlay
           playsInline
-          muted={false}
+          muted={participant instanceof LocalParticipant}
           style={{ width: '100%', height: '100%', objectFit: 'contain' }}
         />
         <div style={{

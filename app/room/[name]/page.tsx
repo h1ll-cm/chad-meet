@@ -1,8 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { Room } from 'livekit-client'
-import ParticipantsGrid from '../../../components/ParticipantsGrid'
-import VideoControls from '../../../components/VideoControls'
+import ParticipantsGrid from './ParticipantsGrid'
+import VideoControls from './VideoControls'
 
 export default function RoomPage({ params }: { params: { name: string } }) {
   const [room, setRoom] = useState<Room | null>(null)

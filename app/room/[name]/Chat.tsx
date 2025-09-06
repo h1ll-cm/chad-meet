@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { Room, RoomEvent, DataPacket_Kind } from 'livekit-client'
+import { Room, RoomEvent, DataPublishOptions } from 'livekit-client'
 
 interface ChatProps {
   room: Room
@@ -19,15 +19,19 @@ export default function Chat({ room }: ChatProps) {
 
   useEffect(() => {
     const handleDataReceived = (payload: Uint8Array, participant?: any) => {
-      const decoder = new TextDecoder()
-      const data = JSON.parse(decoder.decode(payload))
-      
-      if (data.type === 'chat') {
-        setMessages(prev => [...prev, {
-          from: participant?.name || participant?.identity || 'Неизвестный',
-          message: data.message,
-          timestamp: Date.now()
-        }])
+      try {
+        const decoder = new TextDecoder()
+        const data = JSON.parse(decoder.decode(payload))
+        
+        if (data.type === 'chat') {
+          setMessages(prev => [...prev, {
+            from: participant?.name || participant?.identity || 'Неизвестный',
+            message: data.message,
+            timestamp: Date.now()
+          }])
+        }
+      } catch (error) {
+        console.error('Ошибка обработки сообщения:', error)
       }
     }
 
@@ -47,26 +51,52 @@ export default function Chat({ room }: ChatProps) {
 
     const messageData = {
       type: 'chat',
-      message: inputMessage
+      message: inputMessage.trim()
     }
 
     const encoder = new TextEncoder()
     const data = encoder.encode(JSON.stringify(messageData))
 
     try {
-      await room.localParticipant.publishData(data, DataPacket_Kind.RELIABLE)
+      // Используем новый API без DataPacket_Kind
+      const options: DataPublishOptions = {
+        reliable: true
+      }
+      
+      await room.localParticipant.publishData(data, options)
       
       // Добавляем своё сообщение
       setMessages(prev => [...prev, {
         from: 'Вы',
-        message: inputMessage,
+        message: inputMessage.trim(),
         timestamp: Date.now()
       }])
       
       setInputMessage('')
     } catch (error) {
       console.error('Ошибка отправки сообщения:', error)
+      
+      // Fallback: попробуем без options
+      try {
+        await room.localParticipant.publishData(data)
+        setMessages(prev => [...prev, {
+          from: 'Вы',
+          message: inputMessage.trim(),
+          timestamp: Date.now()
+        }])
+        setInputMessage('')
+      } catch (fallbackError) {
+        console.error('Fallback тоже не сработал:', fallbackError)
+      }
     }
+  }
+
+  const formatTime = (timestamp: number) => {
+    const date = new Date(timestamp)
+    return date.toLocaleTimeString('ru-RU', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    })
   }
 
   return (
@@ -80,30 +110,52 @@ export default function Chat({ room }: ChatProps) {
         padding: '1rem',
         borderBottom: '1px solid #333',
         color: 'white',
-        fontWeight: 'bold'
+        fontWeight: 'bold',
+        fontSize: '1.2rem'
       }}>
-        Чат
+        💬 Чат
       </div>
       
       <div style={{
         flex: 1,
         padding: '1rem',
-        overflowY: 'auto'
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.5rem'
       }}>
-        {messages.map((msg, index) => (
-          <div key={index} style={{
-            marginBottom: '0.5rem',
-            padding: '0.5rem',
-            background: '#333',
-            borderRadius: '4px',
-            color: 'white'
+        {messages.length === 0 ? (
+          <div style={{
+            color: '#666',
+            textAlign: 'center',
+            marginTop: '2rem',
+            fontStyle: 'italic'
           }}>
-            <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
-              {msg.from}
-            </div>
-            <div>{msg.message}</div>
+            Сообщений пока нет...
           </div>
-        ))}
+        ) : (
+          messages.map((msg, index) => (
+            <div key={index} style={{
+              padding: '0.75rem',
+              background: msg.from === 'Вы' ? '#007acc22' : '#333',
+              borderRadius: '8px',
+              color: 'white',
+              borderLeft: msg.from === 'Вы' ? '3px solid #007acc' : '3px solid #666'
+            }}>
+              <div style={{ 
+                fontSize: '0.8rem', 
+                color: '#aaa',
+                marginBottom: '0.25rem',
+                display: 'flex',
+                justifyContent: 'space-between'
+              }}>
+                <span style={{ fontWeight: 'bold' }}>{msg.from}</span>
+                <span>{formatTime(msg.timestamp)}</span>
+              </div>
+              <div style={{ wordWrap: 'break-word' }}>{msg.message}</div>
+            </div>
+          ))
+        )}
         <div ref={messagesEndRef} />
       </div>
       
@@ -117,29 +169,40 @@ export default function Chat({ room }: ChatProps) {
           type="text"
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+          onKeyPress={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              sendMessage()
+            }
+          }}
           placeholder="Введите сообщение..."
+          maxLength={500}
           style={{
             flex: 1,
-            padding: '0.5rem',
+            padding: '0.75rem',
             border: '1px solid #444',
-            borderRadius: '4px',
+            borderRadius: '8px',
             background: '#333',
-            color: 'white'
+            color: 'white',
+            fontSize: '1rem',
+            outline: 'none'
           }}
         />
         <button
           onClick={sendMessage}
+          disabled={!inputMessage.trim()}
           style={{
-            padding: '0.5rem 1rem',
-            background: '#007acc',
+            padding: '0.75rem 1.5rem',
+            background: inputMessage.trim() ? '#007acc' : '#555',
             color: 'white',
             border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer'
+            borderRadius: '8px',
+            cursor: inputMessage.trim() ? 'pointer' : 'not-allowed',
+            fontSize: '1rem',
+            transition: 'background 0.2s'
           }}
         >
-          Отправить
+          📤 Отправить
         </button>
       </div>
     </div>

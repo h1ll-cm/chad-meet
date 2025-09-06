@@ -1,20 +1,29 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { Room, Track, RemoteTrack, RemoteParticipant, LocalParticipant } from 'livekit-client'
+import { 
+  Room, 
+  Track, 
+  RemoteTrack, 
+  RemoteParticipant, 
+  LocalParticipant,
+  Participant 
+} from 'livekit-client'
 
 interface ParticipantsGridProps {
   room: Room | null
 }
 
 export default function ParticipantsGrid({ room }: ParticipantsGridProps) {
-  const [participants, setParticipants] = useState<(RemoteParticipant | LocalParticipant)[]>([])
+  const [participants, setParticipants] = useState<Participant[]>([])
 
   useEffect(() => {
     if (!room) return
 
     const updateParticipants = () => {
       const remoteParticipants = Array.from(room.remoteParticipants.values())
-      const allParticipants = room.localParticipant ? [room.localParticipant, ...remoteParticipants] : remoteParticipants
+      const allParticipants: Participant[] = room.localParticipant 
+        ? [room.localParticipant, ...remoteParticipants] 
+        : remoteParticipants
       setParticipants(allParticipants)
     }
 
@@ -53,15 +62,15 @@ export default function ParticipantsGrid({ room }: ParticipantsGridProps) {
   )
 }
 
-function ParticipantTile({ participant }: { participant: RemoteParticipant | LocalParticipant }) {
+function ParticipantTile({ participant }: { participant: Participant }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const screenRef = useRef<HTMLVideoElement>(null)
   const [isSpeaking, setIsSpeaking] = useState(false)
-  const isLocal = participant instanceof LocalParticipant
+  const isLocal = participant === participant.room?.localParticipant
 
   useEffect(() => {
-    const cameraTrack = participant.getTrack(Track.Source.Camera)?.track as RemoteTrack
-    const screenTrack = participant.getTrack(Track.Source.ScreenShare)?.track as RemoteTrack
+    const cameraTrack = participant.getTrackPublication(Track.Source.Camera)?.track
+    const screenTrack = participant.getTrackPublication(Track.Source.ScreenShare)?.track
 
     if (cameraTrack && videoRef.current) {
       cameraTrack.attach(videoRef.current)
@@ -69,9 +78,6 @@ function ParticipantTile({ participant }: { participant: RemoteParticipant | Loc
     if (screenTrack && screenRef.current) {
       screenTrack.attach(screenRef.current)
     }
-
-    const handleSpeaking = () => setIsSpeaking(true)
-    const handleStoppedSpeaking = () => setIsSpeaking(false)
 
     participant.on('isSpeakingChanged', setIsSpeaking)
 
@@ -86,8 +92,8 @@ function ParticipantTile({ participant }: { participant: RemoteParticipant | Loc
     }
   }, [participant])
 
-  const cameraTrack = participant.getTrack(Track.Source.Camera)
-  const screenTrack = participant.getTrack(Track.Source.ScreenShare)
+  const cameraTrack = participant.getTrackPublication(Track.Source.Camera)
+  const screenTrack = participant.getTrackPublication(Track.Source.ScreenShare)
   const hasBoth = cameraTrack && screenTrack
 
   return (

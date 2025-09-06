@@ -4,7 +4,6 @@ import { Room, RoomEvent, RemoteParticipant, LocalParticipant } from 'livekit-cl
 import ParticipantsGrid from './ParticipantsGrid'
 import ChatComponent from './ChatComponent'
 import ControlsComponent from './ControlsComponent'
-import { VideoProvider } from './VideoContext'
 
 interface RoomComponentProps {
   room: Room
@@ -34,20 +33,18 @@ export default function RoomComponent({ room }: RoomComponentProps) {
   }, [room])
 
   return (
-    <VideoProvider room={room}>
-      <div className="room-container">
-        <div className="participants-section">
-          <ParticipantsGrid participants={participants} />
-        </div>
-        
-        <div className="controls-section">
-          <ControlsComponent room={room} />
-        </div>
-        
-        <div className="chat-section">
-          <ChatComponent room={room} />
-        </div>
+    <div className="room-container">
+      <div className="participants-section">
+        <ParticipantsGrid participants={participants} />
       </div>
-    </VideoProvider>
+      
+      <div className="controls-section">
+        <ControlsComponent room={room} />
+      </div>
+      
+      <div className="chat-section">
+        <ChatComponent room={room} />
+      </div>
+    </div>
   )
 }

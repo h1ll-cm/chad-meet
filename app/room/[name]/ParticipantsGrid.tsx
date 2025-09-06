@@ -1,17 +1,42 @@
 'use client'
-import { useState, useEffect } from 'react'
-import {
-  ParticipantLoop,
-  ParticipantName,
-  Participant,
-  TrackLoop,
-  VideoTrack,
-  AudioTrack,
-  useIsSpeaking,
-} from '@livekit/components-react'
-import { Track, Participant as LKParticipant } from 'livekit-client'
+import { useState, useEffect, useRef } from 'react'
+import { Room, Track, RemoteTrack, RemoteParticipant, LocalParticipant } from 'livekit-client'
 
-export default function ParticipantsGrid() {
+interface ParticipantsGridProps {
+  room: Room | null
+}
+
+export default function ParticipantsGrid({ room }: ParticipantsGridProps) {
+  const [participants, setParticipants] = useState<(RemoteParticipant | LocalParticipant)[]>([])
+
+  useEffect(() => {
+    if (!room) return
+
+    const updateParticipants = () => {
+      const remoteParticipants = Array.from(room.remoteParticipants.values())
+      const allParticipants = room.localParticipant ? [room.localParticipant, ...remoteParticipants] : remoteParticipants
+      setParticipants(allParticipants)
+    }
+
+    updateParticipants()
+
+    room.on('participantConnected', updateParticipants)
+    room.on('participantDisconnected', updateParticipants)
+    room.on('trackPublished', updateParticipants)
+    room.on('trackUnpublished', updateParticipants)
+    room.on('trackSubscribed', updateParticipants)
+    room.on('trackUnsubscribed', updateParticipants)
+
+    return () => {
+      room.off('participantConnected', updateParticipants)
+      room.off('participantDisconnected', updateParticipants)
+      room.off('trackPublished', updateParticipants)
+      room.off('trackUnpublished', updateParticipants)
+      room.off('trackSubscribed', updateParticipants)
+      room.off('trackUnsubscribed', updateParticipants)
+    }
+  }, [room])
+
   return (
     <div style={{
       display: 'grid',
@@ -21,183 +46,149 @@ export default function ParticipantsGrid() {
       height: '100%',
       overflow: 'auto'
     }}>
-      <ParticipantLoop>
-        <ParticipantTile />
-      </ParticipantLoop>
+      {participants.map((participant) => (
+        <ParticipantTile key={participant.identity} participant={participant} />
+      ))}
     </div>
   )
 }
 
-function ParticipantTile() {
-  const [hasTracks, setHasTracks] = useState(false)
-  const [updateKey, setUpdateKey] = useState(0)
-  const participant = TrackLoop.useContext()?.participant as LKParticipant || null
-  const isSpeaking = useIsSpeaking(participant)
-  const isLocal = participant?.isLocal
+function ParticipantTile({ participant }: { participant: RemoteParticipant | LocalParticipant }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const screenRef = useRef<HTMLVideoElement>(null)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const isLocal = participant instanceof LocalParticipant
 
   useEffect(() => {
-    if (participant) {
-      const handleTrackChange = () => {
-        const camera = participant.getTrack(Track.Source.Camera)
-        const screen = participant.getTrack(Track.Source.ScreenShare)
-        setHasTracks(!!camera || !!screen)
-        setUpdateKey((prev) => prev + 1)
-        console.log(`🔄 Обновление треков для ${participant.identity}: camera=${!!camera}, screen=${!!screen}`)
+    const cameraTrack = participant.getTrack(Track.Source.Camera)?.track as RemoteTrack
+    const screenTrack = participant.getTrack(Track.Source.ScreenShare)?.track as RemoteTrack
+
+    if (cameraTrack && videoRef.current) {
+      cameraTrack.attach(videoRef.current)
+    }
+    if (screenTrack && screenRef.current) {
+      screenTrack.attach(screenRef.current)
+    }
+
+    const handleSpeaking = () => setIsSpeaking(true)
+    const handleStoppedSpeaking = () => setIsSpeaking(false)
+
+    participant.on('isSpeakingChanged', setIsSpeaking)
+
+    return () => {
+      participant.off('isSpeakingChanged', setIsSpeaking)
+      if (cameraTrack && videoRef.current) {
+        cameraTrack.detach(videoRef.current)
       }
-
-      participant.on('trackPublished', handleTrackChange)
-      participant.on('trackUnpublished', handleTrackChange)
-      participant.on('trackSubscribed', handleTrackChange)
-      participant.on('trackUnsubscribed', handleTrackChange)
-
-      handleTrackChange() // Initial check
-
-      return () => {
-        participant.off('trackPublished', handleTrackChange)
-        participant.off('trackUnpublished', handleTrackChange)
-        participant.off('trackSubscribed', handleTrackChange)
-        participant.off('trackUnsubscribed', handleTrackChange)
+      if (screenTrack && screenRef.current) {
+        screenTrack.detach(screenRef.current)
       }
     }
   }, [participant])
 
-  if (!participant) return null
+  const cameraTrack = participant.getTrack(Track.Source.Camera)
+  const screenTrack = participant.getTrack(Track.Source.ScreenShare)
+  const hasBoth = cameraTrack && screenTrack
 
   return (
-    <Participant key={`participant-${participant.identity}-${updateKey}`} participant={participant}>
+    <div style={{
+      background: '#1a1a1a',
+      borderRadius: '12px',
+      padding: '12px',
+      border: isSpeaking ? '3px solid #00ff00' : '2px solid #333',
+      transition: 'border 0.3s ease',
+    }}>
       <div style={{
-        background: '#1a1a1a',
-        borderRadius: '12px',
-        padding: '12px',
-        border: isSpeaking ? '3px solid #00ff00' : '2px solid #333',
-        transition: 'border 0.3s ease',
-        position: 'relative'
+        color: 'white',
+        fontSize: '1rem',
+        marginBottom: '12px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
       }}>
         <div style={{
-          color: 'white',
-          fontSize: '1rem',
-          marginBottom: '12px',
+          width: '10px',
+          height: '10px',
+          borderRadius: '50%',
+          background: isSpeaking ? '#00ff00' : '#666',
+          transition: 'background 0.3s ease'
+        }} />
+        {participant.name || participant.identity}
+        {isLocal && <span style={{ color: '#007acc' }}>(вы)</span>}
+      </div>
+
+      {hasBoth ? (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 2fr',
+          gap: '8px',
+          height: '280px'
+        }}>
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted={isLocal}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              background: '#333',
+              borderRadius: '6px'
+            }}
+          />
+          <video
+            ref={screenRef}
+            autoPlay
+            playsInline
+            muted
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'contain',
+              background: '#000',
+              borderRadius: '6px'
+            }}
+          />
+        </div>
+      ) : cameraTrack || screenTrack ? (
+        <video
+          ref={cameraTrack ? videoRef : screenRef}
+          autoPlay
+          playsInline
+          muted={isLocal}
+          style={{
+            width: '100%',
+            height: '280px',
+            objectFit: cameraTrack ? 'cover' : 'contain',
+            background: cameraTrack ? '#333' : '#000',
+            borderRadius: '6px'
+          }}
+        />
+      ) : (
+        <div style={{
+          height: '280px',
+          background: '#333',
+          borderRadius: '8px',
           display: 'flex',
           alignItems: 'center',
-          gap: '8px'
+          justifyContent: 'center'
         }}>
           <div style={{
-            width: '10px',
-            height: '10px',
+            width: '100px',
+            height: '100px',
             borderRadius: '50%',
-            background: isSpeaking ? '#00ff00' : '#666',
-            transition: 'background 0.3s ease'
-          }} />
-          <ParticipantName participant={participant} />
-          {isLocal && <span style={{ color: '#007acc' }}>(вы)</span>}
-        </div>
-
-        <div style={{
-          minHeight: '280px',
-          borderRadius: '8px',
-          overflow: 'hidden',
-          position: 'relative'
-        }}>
-          <TrackLoop participant={participant} sources={[Track.Source.Camera, Track.Source.ScreenShare]}>
-            <TrackVideo hasBoth={participant.getTrack(Track.Source.Camera) && participant.getTrack(Track.Source.ScreenShare)} />
-          </TrackLoop>
-
-          {!hasTracks && (
-            <div style={{
-              height: '280px',
-              background: '#333',
-              borderRadius: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <div style={{
-                width: '100px',
-                height: '100px',
-                borderRadius: '50%',
-                background: isSpeaking ? '#00aa00' : '#007acc',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '2.5rem',
-                color: 'white',
-                transition: 'all 0.3s ease',
-                transform: isSpeaking ? 'scale(1.1)' : 'scale(1)'
-              }}>
-                {participant.name?.charAt(0).toUpperCase() || 'U'}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {!isLocal && <AudioTrack source={Track.Source.Microphone} participant={participant} />}
-      </div>
-    </Participant>
-  )
-}
-
-function TrackVideo({ hasBoth }: { hasBoth: boolean }) {
-  const trackRef = TrackLoop.useTrackRef()
-  const type = trackRef.source === Track.Source.Camera ? 'camera' : 'screen'
-  const isSpeaking = useIsSpeaking(trackRef.participant) && type === 'camera'
-
-  if (hasBoth) {
-    return (
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 2fr',
-        gap: '8px',
-        height: '280px'
-      }}>
-        <div style={{ position: 'relative' }}>
-          <VideoTrack source={Track.Source.Camera} participant={trackRef.participant} style={{ width: '100%', height: '100%', objectFit: 'cover', background: '#333', borderRadius: '6px' }} />
-          <div style={{ position: 'absolute', top: '8px', left: '8px', background: 'rgba(0,0,0,0.8)', color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem' }}>📹 Камера</div>
-          {isSpeaking && <div style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,255,0,0.9)', color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem' }}>🎤 Говорит</div>}
-        </div>
-        <div style={{ position: 'relative' }}>
-          <VideoTrack source={Track.Source.ScreenShare} participant={trackRef.participant} style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000', borderRadius: '6px' }} />
-          <div style={{ position: 'absolute', top: '8px', left: '8px', background: 'rgba(0,0,0,0.8)', color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem' }}>🖥️ Экран</div>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div style={{ position: 'relative', height: '280px', width: '100%' }}>
-      <VideoTrack 
-        {...trackRef}
-        style={{ 
-          width: '100%', 
-          height: '100%',
-          borderRadius: '6px',
-          objectFit: type === 'screen' ? 'contain' : 'cover',
-          background: type === 'screen' ? '#000' : '#333'
-        }} 
-      />
-      <div style={{
-        position: 'absolute',
-        top: '8px',
-        left: '8px',
-        background: 'rgba(0,0,0,0.8)',
-        color: 'white',
-        padding: '4px 8px',
-        borderRadius: '4px',
-        fontSize: '0.8rem'
-      }}>
-        {type === 'camera' ? '📹 Камера' : '🖥️ Экран'}
-      </div>
-      {type === 'camera' && isSpeaking && (
-        <div style={{
-          position: 'absolute',
-          top: '8px',
-          right: '8px',
-          background: 'rgba(0,255,0,0.9)',
-          color: 'white',
-          padding: '4px 8px',
-          borderRadius: '4px',
-          fontSize: '0.8rem'
-        }}>
-          🎤 Говорит
+            background: isSpeaking ? '#00aa00' : '#007acc',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '2.5rem',
+            color: 'white',
+            transition: 'all 0.3s ease',
+            transform: isSpeaking ? 'scale(1.1)' : 'scale(1)'
+          }}>
+            {participant.name?.charAt(0).toUpperCase() || 'U'}
+          </div>
         </div>
       )}
     </div>
